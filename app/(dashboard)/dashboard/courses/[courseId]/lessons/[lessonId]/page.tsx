@@ -5,6 +5,8 @@ import { PortableText } from "@portabletext/react";
 import { LoomEmbed } from "@/components/LoomEmbed";
 import { VideoPlayer } from "@/components/VideoPlayer";
 import { LessonCompleteButton } from "@/components/LessonCompleteButton";
+import { LessonResources } from "@/components/LessonResources";
+import { projectId, dataset } from "@/sanity/env";
 
 interface LessonPageProps {
   params: Promise<{
@@ -39,6 +41,15 @@ export default async function LessonPage({ params }: LessonPageProps) {
 
             {/* Loom Embed Video if loomUrl is provided */}
             {lesson.loomUrl && <LoomEmbed shareUrl={lesson.loomUrl} />}
+
+            {/* Lesson Resources */}
+            {lesson.resources && lesson.resources.length > 0 && (
+              <LessonResources
+                resources={lesson.resources.filter((r) => r && r.file?.asset)}
+                projectId={projectId}
+                dataset={dataset}
+              />
+            )}
 
             {/* Lesson Content */}
             {lesson.content && (

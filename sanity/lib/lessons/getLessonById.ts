@@ -5,6 +5,23 @@ export async function getLessonById(id: string) {
   const getLessonByIdQuery =
     defineQuery(`*[_type == "lesson" && _id == $id][0] {
     ...,
+    resources[] {
+      _key,
+      title,
+      description,
+      file {
+        _type,
+        asset-> {
+          _id,
+          _type,
+          url,
+          originalFilename,
+          extension,
+          size
+        }
+      },
+      fileType
+    },
     "module": module->{
       ...,
       "course": course->{...}
