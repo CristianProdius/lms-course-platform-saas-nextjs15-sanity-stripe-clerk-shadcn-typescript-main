@@ -1,5 +1,7 @@
 import { StructureBuilder } from "sanity/structure";
 
+import { apiVersion } from "./env";
+
 // https://www.sanity.io/docs/structure-builder-cheat-sheet
 export const structure = (S: StructureBuilder) =>
   S.list()
@@ -21,17 +23,16 @@ export const structure = (S: StructureBuilder) =>
                     .child(
                       S.document().schemaType("course").documentId(courseId)
                     ),
-                  // Option to view course enrollments
-                  S.listItem()
-                    .title("View Students")
-                    .child(
-                      S.documentList()
-                        .title("Course Enrollments")
-                        .filter(
-                          '_type == "enrollment" && course._ref == $courseId'
-                        )
-                        .params({ courseId })
-                    ),
+                  // Option to view course enrollments with API version
+                  S.listItem().title("View Students").child(
+                    S.documentList()
+                      .title("Course Enrollments")
+                      .apiVersion(apiVersion) // ADD THIS LINE
+                      .filter(
+                        '_type == "enrollment" && course._ref == $courseId'
+                      )
+                      .params({ courseId })
+                  ),
                 ])
             )
         ),
@@ -64,17 +65,16 @@ export const structure = (S: StructureBuilder) =>
                                 .schemaType("instructor")
                                 .documentId(instructorId)
                             ),
-                          // Option to view instructor's courses
-                          S.listItem()
-                            .title("View Courses")
-                            .child(
-                              S.documentList()
-                                .title("Instructor's Courses")
-                                .filter(
-                                  '_type == "course" && instructor._ref == $instructorId'
-                                )
-                                .params({ instructorId })
-                            ),
+                          // Option to view instructor's courses with API version
+                          S.listItem().title("View Courses").child(
+                            S.documentList()
+                              .title("Instructor's Courses")
+                              .apiVersion(apiVersion) // ADD THIS LINE
+                              .filter(
+                                '_type == "course" && instructor._ref == $instructorId'
+                              )
+                              .params({ instructorId })
+                          ),
                         ])
                     )
                 ),
@@ -97,24 +97,24 @@ export const structure = (S: StructureBuilder) =>
                                 .schemaType("student")
                                 .documentId(studentId)
                             ),
-                          // Option to view enrollments
-                          S.listItem()
-                            .title("View Enrollments")
-                            .child(
-                              S.documentList()
-                                .title("Student Enrollments")
-                                .filter(
-                                  '_type == "enrollment" && student._ref == $studentId'
-                                )
-                                .params({ studentId })
-                            ),
-                          // Option to view completed lessons
+                          // Option to view enrollments with API version
+                          S.listItem().title("View Enrollments").child(
+                            S.documentList()
+                              .title("Student Enrollments")
+                              .apiVersion(apiVersion) // ADD THIS LINE
+                              .filter(
+                                '_type == "enrollment" && student._ref == $studentId'
+                              )
+                              .params({ studentId })
+                          ),
+                          // Option to view completed lessons with API version
                           S.listItem()
                             .title("View Completed Lessons")
                             .child(
                               S.documentList()
                                 .title("Completed Lessons")
                                 .schemaType("lessonCompletion")
+                                .apiVersion(apiVersion) // ADD THIS LINE
                                 .filter(
                                   '_type == "lessonCompletion" && student._ref == $studentId'
                                 )

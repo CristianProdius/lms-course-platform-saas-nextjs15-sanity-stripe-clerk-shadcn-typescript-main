@@ -37,7 +37,7 @@
     "react-player": "^2.16.0",
     "sanity": "^4.1.1",
     "stripe": "^17.6.0",
-    "styled-components": "^6.1.14",
+    "styled-components": "^6.1.19",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7"
   },
