@@ -324,8 +324,7 @@ const GetStartedSection = () => {
             </div>
 
             {/* Main CTA */}
-            <div className="relative inline-block">
-              <div className="absolute inset-0 bg-gradient-to-r from-emerald-600 to-teal-600 rounded-full blur-xl opacity-50"></div>
+            <div className="relative ">
               <Button
                 asChild
                 className="relative group bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-full px-12 py-8 text-xl font-semibold shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105"
