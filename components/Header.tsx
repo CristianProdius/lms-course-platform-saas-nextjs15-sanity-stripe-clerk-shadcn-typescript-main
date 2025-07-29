@@ -5,12 +5,12 @@ import { BookMarkedIcon } from "lucide-react";
 import Link from "next/link";
 import { SearchInput } from "./SearchInput";
 import { Button } from "./ui/button";
-import DarkModeToggle from "./DarkModeToggle";
+
 import Image from "next/image";
 
 export default function Header() {
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-sm border-b border-border">
+    <header>
       <div className="container mx-auto px-4">
         <div className="flex h-16 items-center justify-between gap-4">
           <div className="flex items-center gap-4">
@@ -37,8 +37,6 @@ export default function Header() {
               </Link>
             </nav>
 
-            <DarkModeToggle />
-
             <SignedIn>
               <UserButton />
             </SignedIn>
@@ -46,7 +44,7 @@ export default function Header() {
             <SignedOut>
               <SignInButton mode="modal">
                 <Button variant="outline" size="default">
-                  Sign In
+                  Start Now
                 </Button>
               </SignInButton>
             </SignedOut>
