@@ -171,7 +171,10 @@ const AITrainingSection = () => {
               asChild
               className="relative group bg-gradient-to-r from-[#2A4666] to-[#1a3455] hover:from-[#1a3455] hover:to-[#2A4666] text-white rounded-full px-10 py-7 text-lg font-semibold shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105"
             >
-              <Link href="/trial" className="flex items-center gap-3">
+              <Link
+                href="/courses/precuity-ai"
+                className="flex items-center gap-3"
+              >
                 <span>Start Your AI Journey</span>
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" />
               </Link>

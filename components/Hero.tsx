@@ -68,7 +68,7 @@ export default function Hero() {
               className="group rounded-full px-8 py-6 text-lg font-semibold border-2 border-[#2A4666]/20 hover:border-[#2A4666]/40 hover:bg-[#2A4666]/5 transition-all duration-300"
             >
               <Link
-                href="/demo"
+                href="/courses/precuity-ai"
                 className="flex items-center gap-2 text-[#2A4666]"
               >
                 Watch Demo

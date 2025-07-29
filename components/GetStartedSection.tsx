@@ -329,7 +329,10 @@ const GetStartedSection = () => {
                 asChild
                 className="relative group bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-full px-12 py-8 text-xl font-semibold shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105"
               >
-                <Link href="/signup" className="flex items-center gap-3">
+                <Link
+                  href="/courses/precuity-ai"
+                  className="flex items-center gap-3"
+                >
                   <UserPlus className="w-6 h-6" />
                   <span>Start Your Team&apos;s AI Journey</span>
                   <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform duration-300" />
