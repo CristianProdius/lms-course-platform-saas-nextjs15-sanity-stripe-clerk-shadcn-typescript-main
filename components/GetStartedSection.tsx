@@ -332,7 +332,7 @@ const GetStartedSection = () => {
               >
                 <Link href="/signup" className="flex items-center gap-3">
                   <UserPlus className="w-6 h-6" />
-                  <span>Start Your Team's AI Journey</span>
+                  <span>Start Your Team&apos;s AI Journey</span>
                   <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform duration-300" />
                 </Link>
               </Button>

@@ -236,7 +236,7 @@ const PremiumFooter = () => {
                   className="flex items-center gap-3 text-gray-600 hover:text-[#FF4A1C] transition-colors duration-300"
                 >
                   <Mail className="w-5 h-5" />
-                  <span>info@precultyai.ai</span>
+                  <span>info@precuity.ai</span>
                 </a>
                 <a
                   href="tel:555-567-8901"

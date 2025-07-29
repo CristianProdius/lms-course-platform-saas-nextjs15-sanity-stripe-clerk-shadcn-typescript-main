@@ -188,7 +188,7 @@ const FAQSection = () => {
               <span className="text-gray-900">Got Questions?</span>
               <br />
               <span className="bg-gradient-to-r from-[#FF4A1C] via-orange-500 to-[#2A4666] bg-clip-text text-transparent">
-                We've Got Answers
+                We&apos;ve Got Answers
               </span>
             </h2>
 
@@ -480,7 +480,8 @@ const FAQSection = () => {
                     </div>
 
                     <h3 className="text-3xl font-semibold text-gray-800 mb-2">
-                      While you're reading this, industry leaders are investing:
+                      While you&apos;re reading this, industry leaders are
+                      investing:
                     </h3>
                   </div>
 
@@ -575,7 +576,7 @@ const FAQSection = () => {
                     <br />
                     <span className="relative inline-block">
                       <span className="bg-gradient-to-r from-[#FF4A1C] via-orange-500 to-[#2A4666] bg-clip-text text-transparent animate-gradient-x">
-                        Won't Wait.
+                        Won&apos;t Wait.
                       </span>
                       {/* Underline Animation */}
                       <div className="absolute -bottom-2 left-0 right-0 h-2 bg-gradient-to-r from-[#FF4A1C] to-[#2A4666] rounded-full animate-width-expand"></div>
@@ -594,7 +595,7 @@ const FAQSection = () => {
                     for less than
                     <span className="font-bold text-gray-900">
                       {" "}
-                      one employee's daily wage.
+                      one employee&apos;s daily wage.
                     </span>
                   </p>
                 </div>

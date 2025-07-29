@@ -1,5 +1,5 @@
 import Hero from "@/components/Hero";
-import { CourseCard } from "@/components/CourseCard";
+
 import { getCourses } from "@/sanity/lib/courses/getCourses";
 import AICompetitorsSection from "@/components/AICompetitorsSection";
 import AITrainingSection from "@/components/AITrainigSection";
@@ -11,8 +11,6 @@ export const dynamic = "force-static";
 export const revalidate = 3600; // revalidate at most every hour
 
 export default async function Home() {
-  const courses = await getCourses();
-
   return (
     <div className="min-h-screen flex flex-col">
       <Hero />

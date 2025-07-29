@@ -160,7 +160,7 @@ const AITrainingSection = () => {
               </span>
             </h3>
             <p className="text-lg sm:text-xl text-gray-600">
-              Don't let your business fall behind in the AI revolution.
+              Don&apos;t let your business fall behind in the AI revolution.
             </p>
           </div>
 
