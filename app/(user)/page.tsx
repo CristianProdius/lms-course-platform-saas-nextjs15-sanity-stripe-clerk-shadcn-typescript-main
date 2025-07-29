@@ -1,6 +1,5 @@
 import Hero from "@/components/Hero";
 
-import { getCourses } from "@/sanity/lib/courses/getCourses";
 import AICompetitorsSection from "@/components/AICompetitorsSection";
 import AITrainingSection from "@/components/AITrainigSection";
 import AIPowerUsersSection from "@/components/AIPowerUsersSection";
