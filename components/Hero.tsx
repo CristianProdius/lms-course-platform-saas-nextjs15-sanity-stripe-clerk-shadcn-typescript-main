@@ -56,7 +56,10 @@ export default function Hero() {
               asChild
               className="group relative bg-gradient-to-r from-[#FF4A1C] to-[#FF4A1C]/90 text-white rounded-full px-8 py-6 text-lg font-semibold hover:scale-105 transition-all duration-300 shadow-lg shadow-[#FF4A1C]/25 hover:shadow-xl hover:shadow-[#FF4A1C]/30 border-0"
             >
-              <Link href="/courses" className="flex items-center gap-2">
+              <Link
+                href="/courses/precuity-ai"
+                className="flex items-center gap-2"
+              >
                 Train Your Team Today
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" />
               </Link>
