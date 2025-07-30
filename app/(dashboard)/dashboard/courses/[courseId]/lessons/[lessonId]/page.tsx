@@ -17,7 +17,6 @@ import {
   Video,
   Download,
   BookOpen,
-  Target,
   Trophy,
 } from "lucide-react";
 

@@ -72,7 +72,7 @@ interface CourseLesson {
 function Sidebar({ course, completedLessons = [] }: SidebarProps) {
   const pathname = usePathname();
   const { isOpen, toggle, close } = useSidebar();
-  const [isMounted, setIsMounted] = useState(false);
+
   const [openModules, setOpenModules] = useState<string[]>([]);
   const [hoveredLesson, setHoveredLesson] = useState<string | null>(null);
 
@@ -97,31 +97,6 @@ function Sidebar({ course, completedLessons = [] }: SidebarProps) {
       setOpenModules([currentModuleId]);
     }
   }, [pathname, course?._id, course?.modules]);
-
-  // Set mounted state
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
-  // Preserve scroll position during hover
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    let scrollPos = 0;
-
-    const handleScroll = () => {
-      if (!isScrollingRef.current) {
-        scrollPos = container.scrollTop;
-      }
-    };
-
-    container.addEventListener("scroll", handleScroll, { passive: true });
-
-    return () => {
-      container.removeEventListener("scroll", handleScroll);
-    };
-  }, []);
 
   // Memoize expensive calculations
   const progress = useMemo(() => {
