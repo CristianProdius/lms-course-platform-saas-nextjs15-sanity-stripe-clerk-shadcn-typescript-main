@@ -196,7 +196,7 @@ export default async function CoursePage({ params }: CoursePageProps) {
                 <div className="w-12 h-12 bg-[#FF4A1C] rounded-lg flex items-center justify-center">
                   <Zap className="h-6 w-6 text-white" />
                 </div>
-                What You'll Learn
+                What You&apos;ll Learn
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {[
