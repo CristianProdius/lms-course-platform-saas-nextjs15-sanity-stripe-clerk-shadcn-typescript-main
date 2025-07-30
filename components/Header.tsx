@@ -2,9 +2,8 @@
 
 import { useState } from "react";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
-import { BookMarkedIcon, Menu, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import Link from "next/link";
-import { SearchInput } from "./SearchInput";
 import { Button } from "./ui/button";
 import Image from "next/image";
 

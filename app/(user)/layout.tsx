@@ -19,7 +19,7 @@ export default function UserLayout({
     <ClerkProvider>
       <ThemeProvider
         attribute="class"
-        defaultTheme="system"
+        defaultTheme="light"
         enableSystem
         disableTransitionOnChange
       >

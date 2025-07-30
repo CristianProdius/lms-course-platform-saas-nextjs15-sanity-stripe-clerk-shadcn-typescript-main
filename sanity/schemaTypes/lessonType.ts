@@ -27,6 +27,13 @@ export const lessonType = defineType({
       type: "text",
     }),
     defineField({
+      name: "duration",
+      title: "Duration (minutes)",
+      type: "number",
+      description: "Estimated time to complete this lesson in minutes",
+      validation: (rule) => rule.min(1).max(300),
+    }),
+    defineField({
       name: "videoUrl",
       title: "Video URL",
       type: "url",
@@ -73,7 +80,7 @@ export const lessonType = defineType({
       of: [
         {
           type: "object",
-          name: "lessonResource", // Add explicit name
+          name: "lessonResource",
           title: "Resource",
           fields: [
             {
@@ -99,25 +106,23 @@ export const lessonType = defineType({
                 accept: ".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt",
                 storeOriginalFilename: true,
               },
-              validation: (rule) => rule.required().assetRequired(),
+              validation: (rule) => rule.required(),
             },
             {
               name: "fileType",
               title: "File Type",
               type: "string",
-              description: "Select the type of file",
               options: {
                 list: [
                   { title: "PDF", value: "pdf" },
                   { title: "Word Document", value: "doc" },
+                  { title: "Excel Spreadsheet", value: "xls" },
                   { title: "PowerPoint", value: "ppt" },
-                  { title: "Excel", value: "xls" },
                   { title: "Text File", value: "txt" },
                   { title: "Other", value: "other" },
                 ],
                 layout: "dropdown",
               },
-              initialValue: "pdf",
               validation: (rule) => rule.required(),
             },
           ],
@@ -126,8 +131,7 @@ export const lessonType = defineType({
               title: "title",
               fileType: "fileType",
             },
-            prepare(selection) {
-              const { title, fileType } = selection;
+            prepare({ title, fileType }) {
               return {
                 title: title || "Untitled Resource",
                 subtitle: fileType ? fileType.toUpperCase() : "File",
@@ -138,4 +142,16 @@ export const lessonType = defineType({
       ],
     }),
   ],
+  preview: {
+    select: {
+      title: "title",
+      duration: "duration",
+    },
+    prepare({ title, duration }) {
+      return {
+        title: title || "Untitled Lesson",
+        subtitle: duration ? `${duration} minutes` : "No duration set",
+      };
+    },
+  },
 });

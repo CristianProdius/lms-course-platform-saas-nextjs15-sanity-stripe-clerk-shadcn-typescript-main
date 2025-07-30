@@ -589,6 +589,13 @@
         },
         "optional": true
       },
+      "duration": {
+        "type": "objectAttribute",
+        "value": {
+          "type": "number"
+        },
+        "optional": true
+      },
       "videoUrl": {
         "type": "objectAttribute",
         "value": {
@@ -836,7 +843,7 @@
                         },
                         "dereferencesTo": "sanity.fileAsset"
                       },
-                      "optional": false
+                      "optional": true
                     },
                     "media": {
                       "type": "objectAttribute",
@@ -871,11 +878,11 @@
                     },
                     {
                       "type": "string",
-                      "value": "ppt"
+                      "value": "xls"
                     },
                     {
                       "type": "string",
-                      "value": "xls"
+                      "value": "ppt"
                     },
                     {
                       "type": "string",
@@ -888,6 +895,13 @@
                   ]
                 },
                 "optional": true
+              },
+              "_type": {
+                "type": "objectAttribute",
+                "value": {
+                  "type": "string",
+                  "value": "lessonResource"
+                }
               }
             },
             "rest": {

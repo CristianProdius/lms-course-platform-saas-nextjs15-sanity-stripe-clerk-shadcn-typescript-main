@@ -110,6 +110,7 @@ export type Lesson = {
   title?: string;
   slug?: Slug;
   description?: string;
+  duration?: number;
   videoUrl?: string;
   loomUrl?: string;
   content?: Array<{
@@ -134,7 +135,7 @@ export type Lesson = {
     title?: string;
     description?: string;
     file?: {
-      asset: {
+      asset?: {
         _ref: string;
         _type: "reference";
         _weak?: boolean;
@@ -143,7 +144,8 @@ export type Lesson = {
       media?: unknown;
       _type: "file";
     };
-    fileType?: "pdf" | "doc" | "ppt" | "xls" | "txt" | "other";
+    fileType?: "pdf" | "doc" | "xls" | "ppt" | "txt" | "other";
+    _type: "lessonResource";
     _key: string;
   }>;
 };
@@ -415,6 +417,7 @@ export type GetCourseByIdQueryResult = {
       title?: string;
       slug?: Slug;
       description?: string;
+      duration?: number;
       videoUrl?: string;
       loomUrl?: string;
       content?: Array<{
@@ -439,7 +442,7 @@ export type GetCourseByIdQueryResult = {
         title?: string;
         description?: string;
         file?: {
-          asset: {
+          asset?: {
             _ref: string;
             _type: "reference";
             _weak?: boolean;
@@ -449,6 +452,7 @@ export type GetCourseByIdQueryResult = {
           _type: "file";
         };
         fileType?: "doc" | "other" | "pdf" | "ppt" | "txt" | "xls";
+        _type: "lessonResource";
         _key: string;
       }>;
     }> | null;
@@ -529,6 +533,7 @@ export type GetCourseBySlugQueryResult = {
       title?: string;
       slug?: Slug;
       description?: string;
+      duration?: number;
       videoUrl?: string;
       loomUrl?: string;
       content?: Array<{
@@ -553,7 +558,7 @@ export type GetCourseBySlugQueryResult = {
         title?: string;
         description?: string;
         file?: {
-          asset: {
+          asset?: {
             _ref: string;
             _type: "reference";
             _weak?: boolean;
@@ -563,6 +568,7 @@ export type GetCourseBySlugQueryResult = {
           _type: "file";
         };
         fileType?: "doc" | "other" | "pdf" | "ppt" | "txt" | "xls";
+        _type: "lessonResource";
         _key: string;
       }>;
     }> | null;
@@ -749,6 +755,7 @@ export type ProgressQueryResult = {
       title?: string;
       slug?: Slug;
       description?: string;
+      duration?: number;
       videoUrl?: string;
       loomUrl?: string;
       content?: Array<{
@@ -773,7 +780,7 @@ export type ProgressQueryResult = {
         title?: string;
         description?: string;
         file?: {
-          asset: {
+          asset?: {
             _ref: string;
             _type: "reference";
             _weak?: boolean;
@@ -783,6 +790,7 @@ export type ProgressQueryResult = {
           _type: "file";
         };
         fileType?: "doc" | "other" | "pdf" | "ppt" | "txt" | "xls";
+        _type: "lessonResource";
         _key: string;
       }>;
     } | null;
@@ -853,6 +861,7 @@ export type ProgressQueryResult = {
         title?: string;
         slug?: Slug;
         description?: string;
+        duration?: number;
         videoUrl?: string;
         loomUrl?: string;
         content?: Array<{
@@ -877,7 +886,7 @@ export type ProgressQueryResult = {
           title?: string;
           description?: string;
           file?: {
-            asset: {
+            asset?: {
               _ref: string;
               _type: "reference";
               _weak?: boolean;
@@ -887,6 +896,7 @@ export type ProgressQueryResult = {
             _type: "file";
           };
           fileType?: "doc" | "other" | "pdf" | "ppt" | "txt" | "xls";
+          _type: "lessonResource";
           _key: string;
         }>;
       }> | null;
@@ -912,6 +922,7 @@ export type GetLessonByIdQueryResult = {
   title?: string;
   slug?: Slug;
   description?: string;
+  duration?: number;
   videoUrl?: string;
   loomUrl?: string;
   content?: Array<{
@@ -945,7 +956,7 @@ export type GetLessonByIdQueryResult = {
         originalFilename: string | null;
         extension: string | null;
         size: number | null;
-      };
+      } | null;
     } | null;
     fileType: "doc" | "other" | "pdf" | "ppt" | "txt" | "xls" | null;
   }> | null;
@@ -1013,6 +1024,7 @@ export type GetCompletionsQueryResult = {
       title?: string;
       slug?: Slug;
       description?: string;
+      duration?: number;
       videoUrl?: string;
       loomUrl?: string;
       content?: Array<{
@@ -1037,7 +1049,7 @@ export type GetCompletionsQueryResult = {
         title?: string;
         description?: string;
         file?: {
-          asset: {
+          asset?: {
             _ref: string;
             _type: "reference";
             _weak?: boolean;
@@ -1047,6 +1059,7 @@ export type GetCompletionsQueryResult = {
           _type: "file";
         };
         fileType?: "doc" | "other" | "pdf" | "ppt" | "txt" | "xls";
+        _type: "lessonResource";
         _key: string;
       }>;
     } | null;
@@ -1117,6 +1130,7 @@ export type GetCompletionsQueryResult = {
         title?: string;
         slug?: Slug;
         description?: string;
+        duration?: number;
         videoUrl?: string;
         loomUrl?: string;
         content?: Array<{
@@ -1141,7 +1155,7 @@ export type GetCompletionsQueryResult = {
           title?: string;
           description?: string;
           file?: {
-            asset: {
+            asset?: {
               _ref: string;
               _type: "reference";
               _weak?: boolean;
@@ -1151,6 +1165,7 @@ export type GetCompletionsQueryResult = {
             _type: "file";
           };
           fileType?: "doc" | "other" | "pdf" | "ppt" | "txt" | "xls";
+          _type: "lessonResource";
           _key: string;
         }>;
       }> | null;
