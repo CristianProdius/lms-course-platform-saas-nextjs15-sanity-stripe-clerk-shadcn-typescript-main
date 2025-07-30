@@ -19,7 +19,7 @@ export default function Header() {
   };
 
   return (
-    <header className="relative top-4">
+    <header className="relative top-4 mb-4">
       <div className="container mx-auto px-4">
         <div className="flex h-16 items-center justify-between gap-4">
           {/* Logo */}
