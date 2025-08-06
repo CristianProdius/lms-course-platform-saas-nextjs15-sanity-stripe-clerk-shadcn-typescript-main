@@ -10,7 +10,11 @@ export async function getEnrolledCourses(clerkId: string) {
         ...,
         "slug": slug.current,
         "category": category->{...},
-        "instructor": instructor->{...}
+        "instructor": instructor->{...},
+        "modules": modules[]->{
+          ...,
+          "lessons": lessons[]->
+        }
       }
     }
   }`);
