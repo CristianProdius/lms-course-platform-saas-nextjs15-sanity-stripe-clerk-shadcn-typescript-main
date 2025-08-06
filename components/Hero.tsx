@@ -75,10 +75,7 @@ export default function Hero() {
 
           {/* Email Collection Form */}
           <div className="max-w-lg mx-auto animate-fade-in-up animation-delay-400">
-            <form
-              onSubmit={handleSubmit}
-              className="flex flex-col sm:flex-row gap-3 mb-4"
-            >
+            <form onSubmit={handleSubmit} className="flex flex-col ap-3 mb-4">
               <input
                 type="email"
                 value={email}
@@ -115,16 +112,6 @@ export default function Hero() {
                 Something went wrong. Please try again.
               </p>
             )}
-
-            {/* Additional CTAs */}
-            <div className="text-center mt-6">
-              <Link
-                href="/courses/precuity-ai"
-                className="text-sm text-[#2A4666] hover:text-[#FF4A1C] transition-colors duration-300 underline-offset-4 hover:underline"
-              >
-                or watch a 2-minute demo →
-              </Link>
-            </div>
           </div>
 
           {/* Trust indicators */}
