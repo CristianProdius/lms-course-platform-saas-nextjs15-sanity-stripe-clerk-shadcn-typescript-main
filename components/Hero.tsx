@@ -21,7 +21,7 @@ export default function Hero() {
       await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulated delay
       setSubmitStatus("success");
       setEmail("");
-    } catch (error) {
+    } catch (_error) {
       setSubmitStatus("error");
     } finally {
       setIsSubmitting(false);
