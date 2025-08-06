@@ -38,6 +38,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-player": "^2.16.0",
+    "resend": "^4.8.0",
     "sanity": "^4.1.1",
     "stripe": "^17.6.0",
     "styled-components": "^6.1.19",

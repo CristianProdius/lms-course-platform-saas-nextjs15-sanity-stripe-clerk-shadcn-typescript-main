@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useSignUp, useOrganizationList } from "@clerk/nextjs";
+import { useState, useEffect, use } from "react";
+import { useSignUp } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,11 +42,13 @@ interface OrganizationInvite {
 export default function EmployeeJoinPage({
   params,
 }: {
-  params: { inviteCode: string };
+  params: Promise<{ inviteCode: string }>;
 }) {
   const router = useRouter();
   const { signUp, isLoaded: isSignUpLoaded, setActive } = useSignUp();
-  useOrganizationList();
+
+  // Unwrap params using React.use()
+  const { inviteCode } = use(params);
 
   const [invitation, setInvitation] = useState<OrganizationInvite | null>(null);
   const [isValidating, setIsValidating] = useState(true);
@@ -62,15 +64,17 @@ export default function EmployeeJoinPage({
 
   // Validate invitation ticket from Clerk
   useEffect(() => {
-    if (isSignUpLoaded && params.inviteCode) {
+    if (isSignUpLoaded && inviteCode) {
       validateInvitation();
     }
-  }, [isSignUpLoaded, params.inviteCode]);
+  }, [isSignUpLoaded, inviteCode]);
 
   const validateInvitation = async () => {
     try {
       setIsValidating(true);
       setError(null);
+
+      console.log("Validating invitation with code:", inviteCode);
 
       // Call API to validate the invitation ticket
       const response = await fetch(`/api/validate-invitation`, {
@@ -79,16 +83,18 @@ export default function EmployeeJoinPage({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          invitationTicket: params.inviteCode,
+          invitationTicket: inviteCode,
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
+        console.error("Validation API error:", errorData);
         throw new Error(errorData.error || "Invalid invitation");
       }
 
       const invitationData = await response.json();
+      console.log("Invitation data received:", invitationData);
       setInvitation(invitationData);
 
       // Pre-fill email if provided
@@ -126,53 +132,77 @@ export default function EmployeeJoinPage({
         throw new Error("Password must be at least 8 characters long");
       }
 
-      // Create Clerk user account with organization invitation
+      // Step 1: Create the user account (without organization)
       const signUpAttempt = await signUp.create({
-        firstName,
-        lastName,
         emailAddress: email,
         password,
-        strategy: "ticket",
-        ticket: params.inviteCode,
+        firstName,
+        lastName,
       });
 
-      // Verify email if needed
+      // Step 2: Verify email if needed
       if (signUpAttempt.status === "missing_requirements") {
         // Send email verification code
         await signUp.prepareEmailAddressVerification({
           strategy: "email_code",
         });
 
-        // You would typically redirect to an email verification page here
-        // For now, we'll assume the email is verified
+        // In a real app, you'd redirect to email verification page
         throw new Error("Please verify your email to continue");
       }
 
+      // Step 3: If sign up is complete, set the session
       if (signUpAttempt.status === "complete") {
         // Set the active session
         await setActive({
           session: signUpAttempt.createdSessionId,
-          organization: invitation.organizationId,
         });
 
-        // Create/update user in Sanity with organization info
-        const response = await fetch("/api/link-user-to-organization", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            clerkId: signUpAttempt.createdUserId,
-            email,
-            firstName,
-            lastName,
-            organizationId: invitation.organizationId,
-            role: invitation.role || "employee",
-          }),
-        });
+        // Step 4: Accept the organization invitation via API
+        try {
+          const acceptResponse = await fetch("/api/accept-org-invitation", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              invitationId: inviteCode,
+              userId: signUpAttempt.createdUserId,
+            }),
+          });
 
-        if (!response.ok) {
-          console.error("Failed to link user to organization in Sanity");
+          if (!acceptResponse.ok) {
+            const errorData = await acceptResponse.json();
+            console.error("Failed to accept invitation:", errorData);
+            // Continue anyway - user can be added manually
+          }
+        } catch (acceptError) {
+          console.error("Error accepting invitation:", acceptError);
+          // Continue anyway
+        }
+
+        // Step 5: Create/update user in Sanity with organization info
+        try {
+          const response = await fetch("/api/link-user-to-organization", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              clerkId: signUpAttempt.createdUserId,
+              email,
+              firstName,
+              lastName,
+              organizationId: invitation.organizationId,
+              role: invitation.role || "employee",
+            }),
+          });
+
+          if (!response.ok) {
+            console.error("Failed to link user to organization in Sanity");
+          }
+        } catch (linkError) {
+          console.error("Error linking to organization:", linkError);
         }
 
         // Redirect to dashboard
