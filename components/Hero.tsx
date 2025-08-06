@@ -75,7 +75,7 @@ export default function Hero() {
 
           {/* Email Collection Form */}
           <div className="max-w-lg mx-auto animate-fade-in-up animation-delay-400">
-            <form onSubmit={handleSubmit} className="flex flex-col ap-3 mb-4">
+            <form onSubmit={handleSubmit} className="flex flex-col gap-3 mb-4">
               <input
                 type="email"
                 value={email}
