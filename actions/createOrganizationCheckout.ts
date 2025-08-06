@@ -157,7 +157,7 @@ export async function createOrganizationCheckout({
       },
     });
 
-    // 8. Create Stripe Checkout Session for subscription
+    // 8. Create Stripe Checkout Session for subscription (NO TRIAL)
     const session = await stripe.checkout.sessions.create({
       customer: stripeCustomerId,
       line_items: [
@@ -176,7 +176,7 @@ export async function createOrganizationCheckout({
           planId: selectedPlan.id,
           employeeLimit: actualEmployeeCount.toString(),
         },
-        trial_period_days: 14, // 14-day free trial
+        // NO TRIAL PERIOD - removed trial_period_days
       },
       metadata: {
         organizationId: organization._id,
@@ -242,29 +242,15 @@ export async function updateOrganizationSubscription({
   newEmployeeCount?: number;
 }) {
   try {
-    // Get current subscription
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-
-    if (!subscription) {
-      throw new Error("Subscription not found");
-    }
-
-    // Get the new plan details
     const newPlan = SUBSCRIPTION_PLANS[newPlanId];
     if (!newPlan) {
       throw new Error("Invalid subscription plan");
     }
 
-    // Validate employee count
-    const actualEmployeeCount =
-      newEmployeeCount || parseInt(subscription.metadata.employeeLimit || "10");
-    if (actualEmployeeCount > newPlan.employeeLimit) {
-      throw new Error(
-        `The ${newPlan.name} supports up to ${newPlan.employeeLimit} employees.`
-      );
-    }
+    // Get current subscription
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
 
-    // Create new price for the updated plan
+    // Create new price
     const newPrice = await stripe.prices.create({
       currency: "usd",
       unit_amount: newPlan.pricePerMonth * 100,
@@ -273,10 +259,14 @@ export async function updateOrganizationSubscription({
       },
       product_data: {
         name: `Precuity AI - ${newPlan.name}`,
+        metadata: {
+          planId: newPlan.id,
+          employeeLimit: (newEmployeeCount || newPlan.employeeLimit).toString(),
+        },
       },
     });
 
-    // Update the subscription
+    // Update subscription
     const updatedSubscription = await stripe.subscriptions.update(
       subscriptionId,
       {
@@ -286,39 +276,37 @@ export async function updateOrganizationSubscription({
             price: newPrice.id,
           },
         ],
+        proration_behavior: "create_prorations",
         metadata: {
           ...subscription.metadata,
           planId: newPlan.id,
-          employeeLimit: actualEmployeeCount.toString(),
+          employeeLimit: (newEmployeeCount || newPlan.employeeLimit).toString(),
         },
-        proration_behavior: "create_prorations",
       }
     );
 
-    // Update organization in Sanity
-    const organizationId = subscription.metadata.organizationId;
-    if (organizationId) {
+    // Update subscription in Sanity
+    const subscriptionQuery = groq`*[_type == "subscription" && stripeSubscriptionId == $subscriptionId][0]`;
+    const subscriptionDoc = await client.fetch(subscriptionQuery, {
+      subscriptionId,
+    });
+
+    if (subscriptionDoc) {
       await client
-        .patch(organizationId)
+        .patch(subscriptionDoc._id)
         .set({
-          employeeLimit: actualEmployeeCount,
+          plan: newPlan.id,
+          employeeLimit: newEmployeeCount || newPlan.employeeLimit,
+          pricePerMonth: newPlan.pricePerMonth,
         })
         .commit();
 
-      // Update subscription record in Sanity
-      const subscriptionQuery = groq`*[_type == "subscription" && organization._ref == $organizationId && stripeSubscriptionId == $subscriptionId][0]._id`;
-      const subscriptionDocId = await client.fetch(subscriptionQuery, {
-        organizationId,
-        subscriptionId,
-      });
-
-      if (subscriptionDocId) {
+      // Also update organization
+      if (subscriptionDoc.organization?._ref) {
         await client
-          .patch(subscriptionDocId)
+          .patch(subscriptionDoc.organization._ref)
           .set({
-            plan: newPlan.id,
-            employeeLimit: actualEmployeeCount,
-            pricePerMonth: newPlan.pricePerMonth,
+            employeeLimit: newEmployeeCount || newPlan.employeeLimit,
           })
           .commit();
       }

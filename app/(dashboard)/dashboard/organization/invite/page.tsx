@@ -525,8 +525,8 @@ export default function OrganizationInvitePage() {
                         </p>
                         <p className="text-blue-700 dark:text-blue-300">
                           Team members will receive an email with their
-                          personalized invitation link. They'll have 7 days to
-                          accept the invitation.
+                          personalized invitation link. They&apos;ll have 7 days
+                          to accept the invitation.
                         </p>
                       </div>
                     </div>

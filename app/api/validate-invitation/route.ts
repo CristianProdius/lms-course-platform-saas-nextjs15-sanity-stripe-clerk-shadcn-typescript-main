@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { clerkClient } from "@clerk/nextjs/server";
 
+interface ClerkError {
+  errors?: Array<{
+    code: string;
+    message: string;
+  }>;
+  message?: string;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -121,13 +129,19 @@ export async function POST(request: NextRequest) {
         },
         { status: 404 }
       );
-    } catch (clerkError: any) {
+    } catch (clerkError: unknown) {
       console.error("Clerk API error:", clerkError);
       console.error("Full error details:", JSON.stringify(clerkError, null, 2));
 
       // Handle specific Clerk errors
-      if (clerkError.errors && clerkError.errors[0]) {
-        const error = clerkError.errors[0];
+      if (
+        typeof clerkError === "object" &&
+        clerkError !== null &&
+        "errors" in clerkError &&
+        Array.isArray((clerkError as ClerkError).errors) &&
+        (clerkError as ClerkError).errors?.[0]
+      ) {
+        const error = (clerkError as ClerkError).errors![0];
         return NextResponse.json(
           { error: error.message || "Invalid invitation" },
           { status: 400 }

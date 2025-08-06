@@ -20,10 +20,10 @@ export default async function MyCoursesPage() {
     course: {
       _id: string;
       // add other course properties as needed
-      [key: string]: any;
+      [key: string]: unknown;
     } | null;
     // add other enrolledCourse properties as needed
-    [key: string]: any;
+    [key: string]: unknown;
   };
 
   const coursesWithProgress = await Promise.all(

@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { clerkClient } from "@clerk/nextjs/server";
 import { auth } from "@clerk/nextjs/server";
 
+interface ClerkError {
+  errors?: Array<{
+    code: string;
+    message: string;
+  }>;
+  message?: string;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -77,13 +85,16 @@ export async function POST(request: NextRequest) {
         { error: "Invitation not found or already used" },
         { status: 404 }
       );
-    } catch (clerkError: any) {
+    } catch (clerkError: unknown) {
       console.error("Clerk API error:", clerkError);
 
       // Check if user is already a member
       if (
-        clerkError.errors &&
-        clerkError.errors[0]?.code === "already_a_member"
+        typeof clerkError === "object" &&
+        clerkError !== null &&
+        "errors" in clerkError &&
+        Array.isArray((clerkError as ClerkError).errors) &&
+        (clerkError as ClerkError).errors?.[0]?.code === "already_a_member"
       ) {
         return NextResponse.json({
           success: true,
@@ -92,7 +103,14 @@ export async function POST(request: NextRequest) {
       }
 
       return NextResponse.json(
-        { error: clerkError.message || "Failed to accept invitation" },
+        {
+          error:
+            typeof clerkError === "object" &&
+            clerkError !== null &&
+            "message" in clerkError
+              ? (clerkError as ClerkError).message
+              : "Failed to accept invitation",
+        },
         { status: 500 }
       );
     }

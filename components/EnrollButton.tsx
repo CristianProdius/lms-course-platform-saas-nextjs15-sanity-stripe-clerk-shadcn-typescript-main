@@ -7,20 +7,21 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 
+interface EnrollButtonProps {
+  courseId: string;
+  isEnrolled: boolean;
+  hasValidOrgAccess?: boolean; // New prop for validated organization access
+}
+
 function EnrollButton({
   courseId,
   isEnrolled,
-}: {
-  courseId: string;
-  isEnrolled: boolean;
-}) {
+  hasValidOrgAccess = false,
+}: EnrollButtonProps) {
   const { user, isLoaded: isUserLoaded } = useUser();
   const { organization, membership } = useOrganization();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-
-  // Check if user has organization access
-  const hasOrgAccess = !!(organization && membership);
 
   const handleEnroll = async (courseId: string) => {
     startTransition(async () => {
@@ -62,8 +63,8 @@ function EnrollButton({
     );
   }
 
-  // Show organization access button for org members
-  if (hasOrgAccess) {
+  // Show organization access button ONLY if organization has a valid subscription
+  if (hasValidOrgAccess && organization) {
     return (
       <Link
         prefetch={false}
@@ -76,34 +77,49 @@ function EnrollButton({
     );
   }
 
-  // Show enroll button only when we're sure user is not enrolled and not part of an org
+  // Check if user is in an organization but without valid subscription
+  const isInOrgWithoutSubscription =
+    !!(organization && membership) && !hasValidOrgAccess;
+
+  // Show enroll button
   return (
-    <button
-      className={`w-full rounded-lg px-6 py-3 font-medium transition-all duration-300 ease-in-out relative h-12
-        ${
-          isPending || !user?.id
-            ? "bg-gray-100 text-gray-400 cursor-not-allowed hover:scale-100"
-            : "bg-white text-black hover:scale-105 hover:shadow-lg hover:shadow-black/10"
-        }
-      `}
-      disabled={!user?.id || isPending}
-      onClick={() => handleEnroll(courseId)}
-    >
-      {!user?.id ? (
-        <span className={`${isPending ? "opacity-0" : "opacity-100"}`}>
-          Sign in to Enroll
-        </span>
-      ) : (
-        <span className={`${isPending ? "opacity-0" : "opacity-100"}`}>
-          Enroll Now
-        </span>
-      )}
-      {isPending && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="w-5 h-5 border-2 border-gray-400 border-t-gray-600 rounded-full animate-spin" />
+    <>
+      <button
+        className={`w-full rounded-lg px-6 py-3 font-medium transition-all duration-300 ease-in-out relative h-12
+          ${
+            isPending || !user?.id
+              ? "bg-gray-300 cursor-not-allowed text-gray-500"
+              : "bg-gradient-to-r from-[#FF4A1C] to-[#2A4666] hover:from-[#FF4A1C]/90 hover:to-[#2A4666]/90 text-white shadow-lg hover:shadow-xl"
+          }`}
+        onClick={() => handleEnroll(courseId)}
+        disabled={isPending || !user?.id}
+      >
+        {!user?.id ? (
+          "Sign in to Enroll"
+        ) : isPending ? (
+          <span className="flex items-center justify-center gap-2">
+            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-current border-r-transparent"></span>
+            Processing...
+          </span>
+        ) : (
+          "Enroll Now"
+        )}
+      </button>
+
+      {/* Show message if user is in organization without subscription */}
+      {isInOrgWithoutSubscription && (
+        <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+          <p className="text-xs text-blue-700 dark:text-blue-300 flex items-start gap-2">
+            <Building2 className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            <span>
+              Your organization ({organization.name}) needs an active
+              subscription for you to access courses. Contact your admin or
+              purchase individually.
+            </span>
+          </p>
         </div>
       )}
-    </button>
+    </>
   );
 }
 

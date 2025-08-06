@@ -2,7 +2,7 @@ import { isEnrolledInCourse } from "@/sanity/lib/student/isEnrolledInCourse";
 import { getStudentByClerkId } from "@/sanity/lib/student/getStudentByClerkId";
 import getCourseById from "@/sanity/lib/courses/getCourseById";
 import { clerkClient } from "@clerk/nextjs/server";
-import { client } from "@/sanity/lib/adminClient"; // ADD THIS IMPORT
+import { client } from "@/sanity/lib/adminClient";
 import groq from "groq";
 
 // ADD THESE TYPE DEFINITIONS
@@ -102,10 +102,10 @@ export async function checkOrganizationCourseAccess(
         (membership) => membership.organization.id
       );
 
-      // Query Sanity for organizations with active subscriptions
+      // Query Sanity for organizations with active subscriptions ONLY (no trials)
       const organizationQuery = groq`*[_type == "organization" && 
         clerkOrganizationId in $orgIds && 
-        subscriptionStatus in ["active", "trialing"]
+        subscriptionStatus == "active"
       ][0] {
         _id,
         name,
@@ -124,7 +124,7 @@ export async function checkOrganizationCourseAccess(
         // 3. IMPORTANT: Verify there's an actual subscription record
         const subscriptionQuery = groq`*[_type == "subscription" && 
           organization._ref == $organizationId && 
-          status in ["active", "trialing"] &&
+          status == "active" &&
           stripeSubscriptionId != null &&
           stripeSubscriptionId != ""
         ][0] {
@@ -207,9 +207,10 @@ export async function getUserAccessibleCourses(userId: string) {
         (membership) => membership.organization.id
       );
 
+      // Check for active subscription ONLY (no trials)
       const orgWithActiveSubQuery = groq`*[_type == "organization" && 
         clerkOrganizationId in $orgIds && 
-        subscriptionStatus in ["active", "trialing"]
+        subscriptionStatus == "active"
       ][0]`;
 
       const activeOrg = await client.fetch(orgWithActiveSubQuery, { orgIds });
@@ -266,7 +267,19 @@ export async function getUserAccessibleCourses(userId: string) {
 
       return {
         hasOrganizationAccess: false,
-        courses: enrollments.map((e: any) => e.course),
+        courses: enrollments.map(
+          (e: {
+            course: {
+              _id: string;
+              title: string;
+              description: string;
+              thumbnail: string;
+              price: number;
+              accessType: string;
+              isFree: boolean;
+            };
+          }) => e.course
+        ),
       };
     }
 

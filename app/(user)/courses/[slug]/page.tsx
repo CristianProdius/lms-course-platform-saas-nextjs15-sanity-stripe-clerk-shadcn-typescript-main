@@ -16,6 +16,7 @@ import EnrollButton from "@/components/EnrollButton";
 import getCourseBySlug from "@/sanity/lib/courses/getCourseBySlug";
 import { isEnrolledInCourse } from "@/sanity/lib/student/isEnrolledInCourse";
 import { auth } from "@clerk/nextjs/server";
+import { checkOrganizationCourseAccess } from "@/lib/auth";
 
 interface CoursePageProps {
   params: Promise<{
@@ -32,6 +33,18 @@ export default async function CoursePage({ params }: CoursePageProps) {
     userId && course?._id
       ? await isEnrolledInCourse(userId, course._id)
       : false;
+
+  // Check organization access (only for active subscriptions, no trials)
+  let hasOrgAccess = false;
+  if (userId && course?._id) {
+    const orgAccessResult = await checkOrganizationCourseAccess(
+      userId,
+      course._id
+    );
+    hasOrgAccess =
+      orgAccessResult.hasAccess &&
+      orgAccessResult.accessType === "organization";
+  }
 
   if (!course) {
     return (
@@ -67,74 +80,51 @@ export default async function CoursePage({ params }: CoursePageProps) {
         <div className="absolute top-20 right-10 w-96 h-96 bg-[#B9FF66] rounded-full blur-3xl opacity-10" />
         <div className="absolute bottom-0 left-20 w-72 h-72 bg-[#B9FF66] rounded-full blur-3xl opacity-10" />
 
-        <div className="absolute inset-0 container mx-auto px-4 flex flex-col justify-end pb-16">
-          <Link
-            href="/"
-            prefetch={false}
-            className="text-white mb-8 flex items-center hover:text-[#B9FF66] transition-colors w-fit group"
-          >
-            <ArrowLeft className="mr-2 h-5 w-5 group-hover:-translate-x-1 transition-transform" />
-            Back to Courses
-          </Link>
+        <div className="absolute inset-0 flex flex-col justify-end">
+          <div className="container mx-auto px-4 pb-12">
+            {/* Back button */}
+            <Link
+              href="/courses"
+              className="inline-flex items-center gap-2 text-white/80 hover:text-white mb-6 transition-colors group"
+            >
+              <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
+              <span className="text-sm font-medium">Back to Courses</span>
+            </Link>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2">
-              <div className="flex items-center gap-3 mb-6">
-                <span className="px-4 py-2 bg-[#B9FF66] text-[#191A23] rounded-full text-sm font-bold">
-                  {course.category?.name || "Uncategorized"}
-                </span>
-                {isEnrolled && (
-                  <span className="px-4 py-2 bg-white/10 text-white rounded-full text-sm font-medium backdrop-blur-sm flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4" />
-                    Enrolled
-                  </span>
-                )}
-              </div>
-
-              <h1 className="text-5xl md:text-6xl font-bold text-white mb-6 leading-tight">
+            {/* Course title and stats */}
+            <div className="max-w-4xl">
+              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-4 leading-tight">
                 {course.title}
               </h1>
+              {course.description && (
+                <p className="text-lg md:text-xl text-white/80 mb-6 leading-relaxed">
+                  {course.description}
+                </p>
+              )}
 
-              <p className="text-xl text-white/80 max-w-3xl mb-8 leading-relaxed">
-                {course.description}
-              </p>
-
-              {/* Course Stats */}
-              <div className="flex flex-wrap gap-6 text-white/70">
+              {/* Course stats */}
+              <div className="flex flex-wrap items-center gap-6 text-white/80">
                 <div className="flex items-center gap-2">
                   <BookOpen className="h-5 w-5 text-[#B9FF66]" />
-                  <span>{totalLessons} Lessons</span>
+                  <span className="text-sm">
+                    {course.modules?.length || 0} Modules
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <PlayCircle className="h-5 w-5 text-[#B9FF66]" />
+                  <span className="text-sm">{totalLessons} Lessons</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Clock className="h-5 w-5 text-[#B9FF66]" />
-                  <span>Self-paced</span>
+                  <span className="text-sm">6 Hours</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Users className="h-5 w-5 text-[#B9FF66]" />
+                  <span className="text-sm">1,234 Students</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Award className="h-5 w-5 text-[#B9FF66]" />
-                  <span>Certificate included</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Pricing Card */}
-            <div className="lg:mt-12">
-              <div className="bg-white rounded-2xl p-8 shadow-2xl border border-gray-100">
-                <div className="mb-6">
-                  <div className="text-4xl font-bold text-[#191A23] mb-2">
-                    {course.price === 0 ? "Free" : `$${course.price}`}
-                  </div>
-                  {(course.price ?? 0) > 0 && (
-                    <p className="text-gray-500 text-sm">One-time payment</p>
-                  )}
-                </div>
-
-                <EnrollButton courseId={course._id} isEnrolled={isEnrolled} />
-
-                <div className="mt-6 pt-6 border-t border-gray-100">
-                  <p className="text-sm text-gray-600 flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    Join 1,234+ students
-                  </p>
+                  <span className="text-sm">Certificate on Completion</span>
                 </div>
               </div>
             </div>
@@ -142,176 +132,210 @@ export default async function CoursePage({ params }: CoursePageProps) {
         </div>
       </div>
 
-      {/* Content Section */}
-      <div className="container mx-auto px-4 py-16">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+      {/* Course Content */}
+      <div className="container mx-auto px-4 py-12">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Main Content */}
-          <div className="lg:col-span-2">
-            {/* Course Overview */}
-            <div className="bg-white rounded-2xl p-8 mb-8 shadow-sm border border-gray-100">
-              <h2 className="text-3xl font-bold text-[#191A23] mb-6">
-                What you&apos;ll learn
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[
-                  "Master fundamental concepts",
-                  "Build real-world projects",
-                  "Industry best practices",
-                  "Hands-on exercises",
-                ].map((item, index) => (
-                  <div key={index} className="flex items-start gap-3">
-                    <CheckCircle className="h-6 w-6 text-[#B9FF66] flex-shrink-0 mt-0.5" />
-                    <span className="text-gray-700">{item}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
+          <div className="lg:col-span-2 space-y-8">
             {/* Course Modules */}
-            <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
-              <h2 className="text-3xl font-bold text-[#191A23] mb-8">
-                Course Content
+            <div>
+              <h2 className="text-2xl font-bold text-[#191A23] mb-6">
+                Course Curriculum
               </h2>
               <div className="space-y-4">
                 {course.modules?.map((module, moduleIndex) => (
                   <div
                     key={module._id}
-                    className="border-2 border-gray-100 rounded-xl overflow-hidden hover:border-[#B9FF66]/50 transition-colors"
+                    className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-all duration-300"
                   >
-                    <div className="p-6 bg-gray-50">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 bg-[#B9FF66] rounded-lg flex items-center justify-center font-bold text-[#191A23]">
-                            {moduleIndex + 1}
-                          </div>
-                          <div>
-                            <h3 className="font-bold text-lg text-[#191A23]">
-                              {module.title}
-                            </h3>
-                            <p className="text-sm text-gray-600 mt-1">
-                              {module.lessons?.length || 0} lessons
-                            </p>
-                          </div>
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          {isEnrolled ? (
-                            <span className="text-[#B9FF66] font-medium">
-                              Available
-                            </span>
-                          ) : (
-                            <Lock className="h-5 w-5" />
-                          )}
-                        </div>
+                    <div className="p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold text-[#191A23]">
+                          Module {moduleIndex + 1}: {module.title}
+                        </h3>
+                        <span className="text-sm text-gray-500">
+                          {module.lessons?.length || 0} lessons
+                        </span>
                       </div>
-                    </div>
 
-                    <div className="divide-y divide-gray-100">
-                      {module.lessons?.map((lesson, lessonIndex) => (
-                        <div
-                          key={lesson._id}
-                          className="p-6 hover:bg-gray-50 transition-colors group"
-                        >
-                          <div className="flex items-center gap-4">
-                            <div className="flex-shrink-0">
-                              <div className="w-10 h-10 rounded-full border-2 border-gray-200 flex items-center justify-center group-hover:border-[#B9FF66] transition-colors">
-                                <span className="text-sm font-medium text-gray-500">
-                                  {lessonIndex + 1}
-                                </span>
-                              </div>
+                      {module.lessons && module.lessons.length > 0 && (
+                        <div className="space-y-3">
+                          {module.lessons.map((lesson, lessonIndex) => (
+                            <div
+                              key={lesson._id}
+                              className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors group"
+                            >
+                              {isEnrolled || hasOrgAccess ? (
+                                <CheckCircle className="h-5 w-5 text-[#B9FF66] flex-shrink-0" />
+                              ) : (
+                                <Lock className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                              )}
+                              <span className="text-sm text-gray-700 flex-1">
+                                {lessonIndex + 1}. {lesson.title}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                5 min
+                              </span>
                             </div>
-                            <div className="flex-1">
-                              <div className="flex items-center gap-3">
-                                <PlayCircle className="h-5 w-5 text-gray-400" />
-                                <span className="font-medium text-[#191A23]">
-                                  {lesson.title}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="text-sm text-gray-500">5 min</div>
-                          </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </div>
                   </div>
                 ))}
               </div>
             </div>
+
+            {/* What You'll Learn */}
+            <div>
+              <h2 className="text-2xl font-bold text-[#191A23] mb-6">
+                What You&apos;ll Learn
+              </h2>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {[
+                    "Understand core fundamentals",
+                    "Apply practical techniques",
+                    "Build real-world projects",
+                    "Master best practices",
+                    "Learn from industry experts",
+                    "Get hands-on experience",
+                  ].map((item, index) => (
+                    <div key={index} className="flex items-start gap-3">
+                      <CheckCircle className="h-5 w-5 text-[#B9FF66] flex-shrink-0 mt-0.5" />
+                      <span className="text-sm text-gray-700">{item}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Instructor Card */}
-            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 sticky top-6">
-              <h2 className="text-2xl font-bold text-[#191A23] mb-6">
-                Your Instructor
-              </h2>
-              {course.instructor && (
-                <div>
-                  <div className="flex items-center gap-4 mb-6">
-                    {course.instructor.photo && (
-                      <div className="relative h-16 w-16">
-                        <Image
-                          src={urlFor(course.instructor.photo).url() || ""}
-                          alt={course.instructor.name || "Course Instructor"}
-                          fill
-                          className="rounded-full object-cover border-2 border-[#B9FF66]"
-                        />
-                      </div>
-                    )}
-                    <div>
-                      <div className="font-bold text-lg text-[#191A23]">
-                        {course.instructor.name}
-                      </div>
-                      <div className="text-gray-600">Expert Instructor</div>
+          <div className="lg:col-span-1">
+            {/* Sticky Enrollment Card */}
+            <div className="sticky top-24 space-y-6">
+              {/* Price Card */}
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+                <div className="p-6 space-y-6">
+                  {/* Price */}
+                  <div>
+                    <div className="flex items-baseline gap-2 mb-2">
+                      <span className="text-4xl font-bold text-[#191A23]">
+                        ${course.price || 0}
+                      </span>
+                      {course.price && course.price > 99 && (
+                        <span className="text-sm text-gray-500 line-through">
+                          ${Math.round(course.price * 1.5)}
+                        </span>
+                      )}
                     </div>
+                    {course.price === 0 && (
+                      <p className="text-sm text-[#B9FF66] font-medium">
+                        Free Course
+                      </p>
+                    )}
                   </div>
 
-                  {course.instructor.bio && (
-                    <p className="text-gray-700 leading-relaxed mb-4">
-                      {course.instructor.bio}
-                    </p>
-                  )}
+                  {/* Enroll Button */}
+                  <EnrollButton
+                    courseId={course._id}
+                    isEnrolled={isEnrolled}
+                    hasValidOrgAccess={hasOrgAccess}
+                  />
 
-                  {/* Instructor Stats */}
-                  <div className="pt-4 border-t border-gray-100 space-y-3">
+                  {/* Course Features */}
+                  <div className="space-y-3 pt-4 border-t">
                     <div className="flex items-center gap-3 text-sm">
-                      <Star className="h-4 w-4 text-[#B9FF66]" />
+                      <Clock className="h-4 w-4 text-gray-400" />
                       <span className="text-gray-600">
-                        4.8 Instructor Rating
+                        Full lifetime access
                       </span>
                     </div>
                     <div className="flex items-center gap-3 text-sm">
-                      <Users className="h-4 w-4 text-[#B9FF66]" />
-                      <span className="text-gray-600">12,345 Students</span>
+                      <Award className="h-4 w-4 text-gray-400" />
+                      <span className="text-gray-600">
+                        Certificate of completion
+                      </span>
                     </div>
                     <div className="flex items-center gap-3 text-sm">
-                      <BookOpen className="h-4 w-4 text-[#B9FF66]" />
-                      <span className="text-gray-600">15 Courses</span>
+                      <Users className="h-4 w-4 text-gray-400" />
+                      <span className="text-gray-600">
+                        Access on mobile and desktop
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Instructor Card */}
+              {course.instructor && (
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+                  <h3 className="font-bold text-lg mb-4 text-[#191A23]">
+                    Your Instructor
+                  </h3>
+                  <div className="flex items-start gap-4">
+                    {course.instructor.image && (
+                      <Image
+                        src={urlFor(course.instructor.image).url() || ""}
+                        alt={course.instructor.name || "Instructor"}
+                        width={60}
+                        height={60}
+                        className="rounded-full object-cover"
+                      />
+                    )}
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-[#191A23]">
+                        {course.instructor.name}
+                      </h4>
+                      {course.instructor.bio && (
+                        <p className="text-sm text-gray-600 mt-1 line-clamp-3">
+                          {course.instructor.bio}
+                        </p>
+                      )}
+                      <div className="mt-3 space-y-1">
+                        <div className="flex items-center gap-2 text-sm">
+                          <Star className="h-4 w-4 text-yellow-500" />
+                          <span className="text-gray-600">
+                            4.8 Instructor Rating
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 text-sm">
+                          <Users className="h-4 w-4 text-[#B9FF66]" />
+                          <span className="text-gray-600">12,345 Students</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-sm">
+                          <BookOpen className="h-4 w-4 text-[#B9FF66]" />
+                          <span className="text-gray-600">15 Courses</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
               )}
-            </div>
 
-            {/* Additional Resources */}
-            <div className="bg-[#191A23] rounded-2xl p-6 text-white">
-              <h3 className="font-bold text-lg mb-4">This course includes:</h3>
-              <div className="space-y-3">
-                <div className="flex items-center gap-3 text-sm">
-                  <CheckCircle className="h-4 w-4 text-[#B9FF66]" />
-                  <span>Lifetime access</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm">
-                  <CheckCircle className="h-4 w-4 text-[#B9FF66]" />
-                  <span>Certificate of completion</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm">
-                  <CheckCircle className="h-4 w-4 text-[#B9FF66]" />
-                  <span>Downloadable resources</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm">
-                  <CheckCircle className="h-4 w-4 text-[#B9FF66]" />
-                  <span>Mobile friendly</span>
+              {/* Additional Resources */}
+              <div className="bg-[#191A23] rounded-2xl p-6 text-white">
+                <h3 className="font-bold text-lg mb-4">
+                  This course includes:
+                </h3>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 text-sm">
+                    <CheckCircle className="h-4 w-4 text-[#B9FF66]" />
+                    <span>Lifetime access</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm">
+                    <CheckCircle className="h-4 w-4 text-[#B9FF66]" />
+                    <span>Certificate of completion</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm">
+                    <CheckCircle className="h-4 w-4 text-[#B9FF66]" />
+                    <span>Downloadable resources</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm">
+                    <CheckCircle className="h-4 w-4 text-[#B9FF66]" />
+                    <span>Mobile friendly</span>
+                  </div>
                 </div>
               </div>
             </div>

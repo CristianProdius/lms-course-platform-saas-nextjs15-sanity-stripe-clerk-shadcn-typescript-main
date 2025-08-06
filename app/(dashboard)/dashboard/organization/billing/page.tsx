@@ -566,8 +566,6 @@ export default function OrganizationBillingPage() {
                 const isCurrentPlan = plan.id === currentPlan.id;
                 const isUpgrade =
                   plan.pricePerMonth > currentPlan.pricePerMonth;
-                const isDowngrade =
-                  plan.pricePerMonth < currentPlan.pricePerMonth;
 
                 return (
                   <div

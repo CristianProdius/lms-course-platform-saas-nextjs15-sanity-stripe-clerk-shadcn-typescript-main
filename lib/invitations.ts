@@ -1,15 +1,10 @@
-import { Organization } from "@clerk/nextjs/server";
-
 /**
  * Generate the invitation link for an organization invitation
  * @param invitationId - The Clerk invitation ID
  * @param organizationSlug - Optional organization slug for prettier URLs
  * @returns The full invitation URL
  */
-export function generateInvitationLink(
-  invitationId: string,
-  organizationSlug?: string
-): string {
+export function generateInvitationLink(invitationId: string): string {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin;
 
   // You can use either the invitation ID directly or create a more complex token

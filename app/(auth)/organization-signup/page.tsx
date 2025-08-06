@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useOrganizationList, useUser, useAuth } from "@clerk/nextjs";
+import { useOrganizationList, useUser } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -169,7 +169,7 @@ export default function OrganizationSignupPage() {
                 Company Information
               </CardTitle>
               <CardDescription>
-                We'll use this to set up your team workspace
+                We&apos;ll use this to set up your team workspace
               </CardDescription>
             </CardHeader>
 
@@ -271,14 +271,15 @@ export default function OrganizationSignupPage() {
                     />
                   </div>
                   <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                    We'll send invoices and billing notifications to this email
+                    We&apos;ll send invoices and billing notifications to this
+                    email
                   </p>
                 </div>
 
                 {/* Benefits List */}
                 <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-6 space-y-3">
                   <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                    What's included:
+                    What&apos;s included:
                   </h3>
                   {[
                     "Team dashboard & progress tracking",

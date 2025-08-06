@@ -22,12 +22,37 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { CourseCard } from "@/components/CourseCard";
+
 import Image from "next/image";
 import { urlFor } from "@/sanity/lib/image";
 
+interface Module {
+  lessons?: Array<{ _id: string; title: string }>;
+}
+
+interface SanityImage {
+  _type: "image";
+  asset: {
+    _ref: string;
+    _type: "reference";
+  };
+  crop?: object;
+  hotspot?: object;
+}
+
+interface Course {
+  _id: string;
+  title: string;
+  image?: SanityImage;
+  modules?: Module[];
+}
+
+interface Enrollment {
+  course: Course;
+}
+
 interface CourseWithProgress {
-  course: any;
+  course: Course;
   progress: number;
   completedLessons: number;
   totalLessons: number;
@@ -50,14 +75,14 @@ export default async function DashboardPage() {
 
   // Get progress for each course
   const coursesWithProgress: CourseWithProgress[] = await Promise.all(
-    enrolledCourses.map(async (enrollment: { course: any }) => {
+    enrolledCourses.map(async (enrollment: Enrollment) => {
       const { course } = enrollment;
       if (!course) return null;
       const progress = await getCourseProgress(user.id, course._id);
 
       const totalLessons =
         course.modules?.reduce(
-          (acc: number, module: any) => acc + (module.lessons?.length || 0),
+          (acc: number, module: Module) => acc + (module.lessons?.length || 0),
           0
         ) || 0;
 
@@ -162,8 +187,8 @@ export default async function DashboardPage() {
                     Welcome to Precuity AI! 🎉
                   </h2>
                   <p className="text-gray-600 dark:text-gray-400 mb-4">
-                    Ready to transform your skills in just 5 days? Let's get
-                    started with your first course.
+                    Ready to transform your skills in just 5 days? Let&apos;s
+                    get started with your first course.
                   </p>
                   <Button
                     asChild
