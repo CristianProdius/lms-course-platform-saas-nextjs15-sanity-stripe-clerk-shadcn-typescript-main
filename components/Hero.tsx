@@ -1,10 +1,33 @@
 "use client";
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { Button } from "./ui/button";
 import { ArrowRight, Sparkles } from "lucide-react";
 
+type SubmitStatus = "success" | "error" | null;
+
 export default function Hero() {
+  const [email, setEmail] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState<SubmitStatus>(null);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    // Simulate API call - replace with your actual API endpoint
+    try {
+      // await fetch('/api/subscribe', { method: 'POST', body: JSON.stringify({ email }) })
+      await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulated delay
+      setSubmitStatus("success");
+      setEmail("");
+    } catch (error) {
+      setSubmitStatus("error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="relative min-h-[80vh] sm:min-h-[70vh] lg:min-h-[60vh] w-full flex items-center overflow-hidden">
       {/* Animated background pattern */}
@@ -50,34 +73,58 @@ export default function Hero() {
             —faster and simpler.
           </p>
 
-          {/* CTA Buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center animate-fade-in-up animation-delay-400">
-            <Button
-              asChild
-              className="group relative bg-gradient-to-r from-[#FF4A1C] to-[#FF4A1C]/90 text-white rounded-full px-8 py-6 text-lg font-semibold hover:scale-105 transition-all duration-300 shadow-lg shadow-[#FF4A1C]/25 hover:shadow-xl hover:shadow-[#FF4A1C]/30 border-0"
+          {/* Email Collection Form */}
+          <div className="max-w-lg mx-auto animate-fade-in-up animation-delay-400">
+            <form
+              onSubmit={handleSubmit}
+              className="flex flex-col sm:flex-row gap-3 mb-4"
             >
-              <Link
-                href="/courses/precuity-ai"
-                className="flex items-center gap-2"
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Enter your work email"
+                required
+                className="flex-1 px-6 py-4 text-base rounded-full border-2 border-[#2A4666]/20 focus:border-[#FF4A1C]/50 focus:outline-none transition-colors duration-300 bg-white/50 backdrop-blur-sm"
+                disabled={isSubmitting}
+              />
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                className="group bg-gradient-to-r from-[#FF4A1C] to-[#FF4A1C]/90 text-white rounded-full px-8 py-4 text-base font-semibold hover:scale-105 transition-all duration-300 shadow-lg shadow-[#FF4A1C]/25 hover:shadow-xl hover:shadow-[#FF4A1C]/30 border-0 whitespace-nowrap"
               >
-                Train Your Team Today
-                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" />
-              </Link>
-            </Button>
+                {isSubmitting ? (
+                  "Sending..."
+                ) : (
+                  <>
+                    Get Free AI Training
+                    <ArrowRight className="inline-block w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform duration-300" />
+                  </>
+                )}
+              </Button>
+            </form>
 
-            <Button
-              asChild
-              variant="outline"
-              className="group rounded-full px-8 py-6 text-lg font-semibold border-2 border-[#2A4666]/20 hover:border-[#2A4666]/40 hover:bg-[#2A4666]/5 transition-all duration-300"
-            >
+            {/* Status Messages */}
+            {submitStatus === "success" && (
+              <p className="text-center text-sm text-green-600 animate-fade-in">
+                ✓ Success! Check your email for the free training materials.
+              </p>
+            )}
+            {submitStatus === "error" && (
+              <p className="text-center text-sm text-red-600 animate-fade-in">
+                Something went wrong. Please try again.
+              </p>
+            )}
+
+            {/* Additional CTAs */}
+            <div className="text-center mt-6">
               <Link
                 href="/courses/precuity-ai"
-                className="flex items-center gap-2 text-[#2A4666]"
+                className="text-sm text-[#2A4666] hover:text-[#FF4A1C] transition-colors duration-300 underline-offset-4 hover:underline"
               >
-                Watch Demo
-                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" />
+                or watch a 2-minute demo →
               </Link>
-            </Button>
+            </div>
           </div>
 
           {/* Trust indicators */}
