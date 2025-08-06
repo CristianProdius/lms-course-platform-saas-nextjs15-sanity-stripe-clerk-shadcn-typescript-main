@@ -16,8 +16,18 @@ export default async function MyCoursesPage() {
   const enrolledCourses = await getEnrolledCourses(user.id);
 
   // Get progress for each enrolled course
+  type EnrolledCourse = {
+    course: {
+      _id: string;
+      // add other course properties as needed
+      [key: string]: any;
+    } | null;
+    // add other enrolledCourse properties as needed
+    [key: string]: any;
+  };
+
   const coursesWithProgress = await Promise.all(
-    enrolledCourses.map(async ({ course }) => {
+    enrolledCourses.map(async ({ course }: EnrolledCourse) => {
       if (!course) return null;
       const progress = await getCourseProgress(user.id, course._id);
       return {

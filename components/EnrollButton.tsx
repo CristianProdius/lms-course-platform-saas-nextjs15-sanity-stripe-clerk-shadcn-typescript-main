@@ -1,8 +1,8 @@
 "use client";
 
 import { createStripeCheckout } from "@/actions/createStripeCheckout";
-import { useUser } from "@clerk/nextjs";
-import { CheckCircle } from "lucide-react";
+import { useUser, useOrganization } from "@clerk/nextjs";
+import { CheckCircle, Building2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
@@ -15,8 +15,12 @@ function EnrollButton({
   isEnrolled: boolean;
 }) {
   const { user, isLoaded: isUserLoaded } = useUser();
+  const { organization, membership } = useOrganization();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+
+  // Check if user has organization access
+  const hasOrgAccess = !!(organization && membership);
 
   const handleEnroll = async (courseId: string) => {
     startTransition(async () => {
@@ -58,7 +62,21 @@ function EnrollButton({
     );
   }
 
-  // Show enroll button only when we're sure user is not enrolled
+  // Show organization access button for org members
+  if (hasOrgAccess) {
+    return (
+      <Link
+        prefetch={false}
+        href={`/dashboard/courses/${courseId}`}
+        className="w-full rounded-lg px-6 py-3 font-medium bg-gradient-to-r from-blue-500 to-indigo-500 text-white hover:from-blue-600 hover:to-indigo-600 transition-all duration-300 h-12 flex items-center justify-center gap-2 group"
+      >
+        <Building2 className="w-5 h-5" />
+        <span>Access via Organization</span>
+      </Link>
+    );
+  }
+
+  // Show enroll button only when we're sure user is not enrolled and not part of an org
   return (
     <button
       className={`w-full rounded-lg px-6 py-3 font-medium transition-all duration-300 ease-in-out relative h-12
