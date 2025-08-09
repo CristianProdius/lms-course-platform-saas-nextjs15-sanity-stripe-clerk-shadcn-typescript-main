@@ -95,7 +95,7 @@ export async function checkCourseAccess(
 }
 
 /**
- * Check if a user has access to a course through organization subscription or individual enrollment
+ * Check if a user has access to a course through organization course purchase or individual enrollment
  * This is the PRIMARY function to use for course access checks
  * @param userId - Clerk user ID
  * @param courseId - Sanity course document ID
@@ -106,99 +106,64 @@ export async function checkOrganizationCourseAccess(
   courseId: string
 ): Promise<CourseAccessResult> {
   try {
-    // 1. Get user's organization memberships from Clerk
-    const clerkUser = (await (
-      await clerkClient()
-    ).users.getUser(userId)) as ClerkUserWithOrganizations;
-    const organizationMemberships = clerkUser.organizationMemberships || [];
+    // Get student data
+    const studentData = await getStudentByClerkId(userId);
+    const student = studentData?.data;
 
-    // 2. Check organization-based access first (B2B)
-    if (organizationMemberships.length > 0) {
-      const orgIds = organizationMemberships.map(
-        (membership) => membership.organization.id
-      );
-
-      // Query Sanity for organizations with ACTIVE PAID subscriptions only
-      const organizationQuery = groq`*[_type == "organization" && 
-        clerkOrganizationId in $orgIds && 
-        subscriptionStatus == "active" &&
-        stripeCustomerId != null
-      ][0] {
-        _id,
-        name,
-        subscriptionStatus,
-        employeeLimit,
-        stripeCustomerId,
-        clerkOrganizationId
-      }`;
-
-      const organization: Organization | null = await client.fetch(
-        organizationQuery,
-        { orgIds }
-      );
-
-      if (organization && organization.stripeCustomerId) {
-        // Verify there's an actual subscription record
-        const subscriptionQuery = groq`*[_type == "subscription" && 
-          organization._ref == $organizationId && 
-          status == "active" &&
-          stripeSubscriptionId != null &&
-          stripeSubscriptionId != ""
-        ][0] {
-          _id,
-          status,
-          plan,
-          stripeSubscriptionId,
-          currentPeriodEnd
-        }`;
-
-        const subscription = await client.fetch(subscriptionQuery, {
-          organizationId: organization._id,
-        });
-
-        // Only grant access if there's a valid Stripe subscription
-        if (subscription && subscription.stripeSubscriptionId) {
-          // Verify subscription is not expired
-          const currentDate = new Date();
-          const periodEnd = new Date(subscription.currentPeriodEnd);
-
-          if (periodEnd > currentDate) {
-            return {
-              hasAccess: true,
-              accessType: "organization",
-              organizationName: organization.name,
-              subscriptionPlan: subscription.plan,
-            };
-          }
-        }
-      }
+    if (!student) {
+      return {
+        hasAccess: false,
+        accessType: "none",
+        reason: "Student record not found",
+      };
     }
 
-    // 3. Fall back to individual enrollment check (B2C users)
-    const authResult = await checkCourseAccess(userId, courseId);
-
-    if (authResult.isAuthorized) {
+    // Check individual enrollment first
+    const isIndividuallyEnrolled = await isEnrolledInCourse(userId, courseId);
+    if (isIndividuallyEnrolled) {
       return {
         hasAccess: true,
         accessType: "individual",
       };
     }
 
-    // 4. No access found
+    // Check organization course purchase
+    if (student.organization) {
+      const orgCourseQuery = groq`*[_type == "organizationCourse" && 
+        organization._ref == $organizationId && 
+        course._ref == $courseId && 
+        isActive == true][0]`;
+
+      const orgCourse = await client.fetch(orgCourseQuery, {
+        organizationId: student.organization._ref,
+        courseId,
+      });
+
+      if (orgCourse) {
+        const org = await client.fetch(
+          groq`*[_type == "organization" && _id == $organizationId][0]`,
+          { organizationId: student.organization._ref }
+        );
+
+        return {
+          hasAccess: true,
+          accessType: "organization",
+          organizationName: org?.name,
+        };
+      }
+    }
+
     return {
       hasAccess: false,
       accessType: "none",
-      reason:
-        organizationMemberships.length > 0
-          ? "Your organization needs an active paid subscription to access courses"
-          : "No active subscription or individual enrollment found",
+      reason: "No access to this course",
     };
   } catch (error) {
     console.error("Error checking course access:", error);
     return {
       hasAccess: false,
       accessType: "none",
-      reason: "Error checking access permissions",
+      reason: "Error checking access",
     };
   }
 }

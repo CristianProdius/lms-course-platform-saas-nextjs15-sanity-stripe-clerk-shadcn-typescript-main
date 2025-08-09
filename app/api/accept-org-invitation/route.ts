@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { clerkClient } from "@clerk/nextjs/server";
 import { auth } from "@clerk/nextjs/server";
+import { associateStudentWithOrganization } from "@/sanity/lib/student/associateStudentWithOrganization";
 
 interface ClerkError {
   errors?: Array<{
@@ -63,6 +64,21 @@ export async function POST(request: NextRequest) {
               userId: userId,
               role: invitation.role || "org:member",
             });
+
+            // Associate user with organization in Sanity
+            try {
+              await associateStudentWithOrganization(
+                userId,
+                org.id,
+                invitation.role === "org:admin" ? "admin" : "employee"
+              );
+            } catch (error) {
+              console.error(
+                "Failed to associate user with organization in Sanity:",
+                error
+              );
+              // Don't fail the whole operation if Sanity update fails
+            }
 
             // The invitation should be automatically marked as accepted by Clerk
             console.log(`User ${userId} added to organization ${org.id}`);

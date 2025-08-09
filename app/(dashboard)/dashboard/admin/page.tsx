@@ -22,7 +22,13 @@ import {
   Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -86,6 +92,25 @@ interface SubscriptionData {
     _id: string;
     title: string;
   }>;
+}
+
+interface OrganizationCourse {
+  _id: string;
+  course: {
+    _id: string;
+    title: string;
+    description?: string;
+    thumbnail?: string;
+    price: number;
+  };
+  purchasedBy: {
+    firstName: string;
+    lastName: string;
+    email: string;
+  };
+  purchasedAt: string;
+  amount: number;
+  employeesWithAccess: number;
 }
 
 // Fetch organization data
@@ -163,6 +188,32 @@ async function getSubscriptionData(
   return await client.fetch(query, { organizationId });
 }
 
+// Fetch organization courses
+async function getOrganizationCourses(
+  organizationId: string
+): Promise<OrganizationCourse[]> {
+  const query = groq`*[_type == "organizationCourse" && organization._ref == $organizationId && isActive == true] {
+    _id,
+    "course": course->{
+      _id,
+      title,
+      description,
+      thumbnail,
+      price
+    },
+    "purchasedBy": purchasedBy->{
+      firstName,
+      lastName,
+      email
+    },
+    purchasedAt,
+    amount,
+    "employeesWithAccess": count(*[_type == "student" && organization._ref == $organizationId])
+  } | order(purchasedAt desc)`;
+
+  return await client.fetch(query, { organizationId });
+}
+
 export default async function AdminDashboardPage() {
   const user = await currentUser();
 
@@ -179,13 +230,19 @@ export default async function AdminDashboardPage() {
   }
 
   // Fetch all admin data
-  const [organization, employees, courseStats, subscription] =
-    await Promise.all([
-      getOrganizationData(student.organization._ref),
-      getOrganizationEmployees(student.organization._ref),
-      getOrganizationCourseStats(student.organization._ref),
-      getSubscriptionData(student.organization._ref),
-    ]);
+  const [
+    organization,
+    employees,
+    courseStats,
+    subscription,
+    organizationCourses,
+  ] = await Promise.all([
+    getOrganizationData(student.organization._ref),
+    getOrganizationEmployees(student.organization._ref),
+    getOrganizationCourseStats(student.organization._ref),
+    getSubscriptionData(student.organization._ref),
+    getOrganizationCourses(student.organization._ref),
+  ]);
 
   if (!organization) {
     return redirect("/dashboard");
@@ -379,6 +436,54 @@ export default async function AdminDashboardPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Organization Courses Section */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BookOpen className="h-5 w-5" />
+              Organization Courses
+            </CardTitle>
+            <CardDescription>
+              Courses purchased for all team members
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {organizationCourses.length === 0 ? (
+                <div className="text-center py-6">
+                  <BookOpen className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                  <p className="text-gray-600">No courses purchased yet</p>
+                  <Button asChild className="mt-4">
+                    <Link href="/courses">Browse Courses</Link>
+                  </Button>
+                </div>
+              ) : (
+                organizationCourses.map((orgCourse) => (
+                  <div key={orgCourse._id} className="border rounded-lg p-4">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h4 className="font-semibold">
+                          {orgCourse.course.title}
+                        </h4>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Purchased by {orgCourse.purchasedBy.firstName}{" "}
+                          {orgCourse.purchasedBy.lastName}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          {new Date(orgCourse.purchasedAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <Badge variant="secondary">
+                        {orgCourse.employeesWithAccess} employees
+                      </Badge>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Main Content Tabs */}
         <Tabs defaultValue="employees" className="space-y-6">

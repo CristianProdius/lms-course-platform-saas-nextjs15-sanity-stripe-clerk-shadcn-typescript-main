@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getStudentByClerkId } from "@/sanity/lib/student/getStudentByClerkId";
 import { createEnrollment } from "@/sanity/lib/student/createEnrollment";
+import { client } from "@/sanity/lib/adminClient";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2023-10-16" as Stripe.LatestApiVersion,
@@ -59,6 +60,34 @@ export async function POST(req: Request) {
         paymentId: session.id,
         amount: session.amount_total! / 100, // Convert from cents to dollars
       });
+
+      // Add this to the existing webhook handler after the individual enrollment logic
+      if (session.metadata?.purchaseType === "organization") {
+        const organizationId = session.metadata.organizationId;
+
+        // Create organization course purchase record
+        await client.create({
+          _type: "organizationCourse",
+          organization: {
+            _type: "reference",
+            _ref: organizationId,
+          },
+          course: {
+            _type: "reference",
+            _ref: courseId,
+          },
+          purchasedBy: {
+            _type: "reference",
+            _ref: student.data._id,
+          },
+          paymentId: session.id,
+          amount: session.amount_total,
+          purchasedAt: new Date().toISOString(),
+          isActive: true,
+        });
+
+        return new NextResponse(null, { status: 200 });
+      }
 
       return new NextResponse(null, { status: 200 });
     }

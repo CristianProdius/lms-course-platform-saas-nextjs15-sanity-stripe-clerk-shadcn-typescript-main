@@ -3,6 +3,8 @@ import { headers } from "next/headers";
 import { Webhook } from "svix";
 import { WebhookEvent } from "@clerk/nextjs/server";
 import { createStudentIfNotExists } from "@/sanity/lib/student/createStudentIfNotExists";
+import { client } from "@/sanity/lib/adminClient";
+import groq from "groq";
 
 const webhookSecret = process.env.CLERK_WEBHOOK_SECRET!;
 
@@ -40,6 +42,94 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Handle organization membership created
+    if (evt.type === "organizationMembership.created") {
+      const { organization, public_user_data, role } = evt.data;
+
+      // The public_user_data only contains user_id, first_name, last_name, and image_url
+      const userId = public_user_data.user_id;
+
+      // We need to fetch the full user data from Clerk to get email
+      try {
+        const response = await fetch(
+          `https://api.clerk.com/v1/users/${userId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${process.env.CLERK_SECRET_KEY}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        if (!response.ok) {
+          console.error(
+            "Failed to fetch user from Clerk:",
+            await response.text()
+          );
+          return NextResponse.json({ success: true }); // Continue processing other webhooks
+        }
+
+        const userData = await response.json();
+
+        // Get primary email
+        const primaryEmail = userData.email_addresses?.find(
+          (email: any) => email.id === userData.primary_email_address_id
+        )?.email_address;
+
+        if (!primaryEmail) {
+          console.error("No primary email found for user:", userId);
+          return NextResponse.json({ success: true });
+        }
+
+        // Create or update the student
+        await createStudentIfNotExists({
+          clerkId: userId,
+          email: primaryEmail,
+          firstName: userData.first_name || public_user_data.first_name || "",
+          lastName: userData.last_name || public_user_data.last_name || "",
+          imageUrl: userData.image_url || public_user_data.image_url || "",
+        });
+
+        // Find the organization in Sanity
+        const orgQuery = groq`*[_type == "organization" && clerkOrganizationId == $clerkOrgId][0]._id`;
+        const organizationRef = await client.fetch(orgQuery, {
+          clerkOrgId: organization.id,
+        });
+
+        if (organizationRef) {
+          // Update the student with organization reference
+          const studentQuery = groq`*[_type == "student" && clerkId == $clerkId][0]._id`;
+          const studentId = await client.fetch(studentQuery, {
+            clerkId: userId,
+          });
+
+          if (studentId) {
+            await client
+              .patch(studentId)
+              .set({
+                organization: {
+                  _type: "reference",
+                  _ref: organizationRef,
+                },
+                role: role === "org:admin" ? "admin" : "employee",
+                acceptedDate: new Date().toISOString(),
+              })
+              .commit();
+
+            console.log(
+              `Updated student ${studentId} with organization ${organizationRef}`
+            );
+          }
+        } else {
+          console.warn(
+            `Organization not found in Sanity for Clerk org ID: ${organization.id}`
+          );
+        }
+      } catch (error) {
+        console.error("Error processing organization membership:", error);
+      }
+    }
+
     // Handle user.created and user.updated events
     if (evt.type === "user.created" || evt.type === "user.updated") {
       const { id, email_addresses, first_name, last_name, image_url } =
@@ -50,7 +140,6 @@ export async function POST(req: NextRequest) {
       );
 
       if (primaryEmail) {
-        // Create or update user in Sanity
         await createStudentIfNotExists({
           clerkId: id,
           email: primaryEmail.email_address,

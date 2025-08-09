@@ -10,6 +10,7 @@ import {
   lessonCompletionType,
   organizationType,
   subscriptionType,
+  organizationCourseType,
 } from "./schemaTypes";
 
 export const schema: { types: SchemaTypeDefinition[] } = {
@@ -24,5 +25,6 @@ export const schema: { types: SchemaTypeDefinition[] } = {
     lessonCompletionType,
     organizationType,
     subscriptionType,
+    organizationCourseType,
   ],
 };
