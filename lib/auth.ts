@@ -7,10 +7,6 @@ import groq from "groq";
 
 // Import types from Sanity
 import type { User } from "@clerk/nextjs/server";
-import type {
-  Course as SanityCourse,
-  Enrollment as SanityEnrollment,
-} from "@/sanity.types";
 
 // Extend the Clerk User type to include organization memberships
 interface ClerkUserWithOrganizations extends User {
