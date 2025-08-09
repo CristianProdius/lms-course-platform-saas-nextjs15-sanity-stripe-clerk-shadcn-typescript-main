@@ -1,14 +1,25 @@
 "use client";
 
 import { useState } from "react";
-import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
-import { Menu, X } from "lucide-react";
+import {
+  SignedIn,
+  SignedOut,
+  SignInButton,
+  UserButton,
+  useOrganization,
+} from "@clerk/nextjs";
+import { Menu, X, BookOpen, Shield } from "lucide-react";
 import Link from "next/link";
 import { Button } from "./ui/button";
 import Image from "next/image";
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { membership } = useOrganization();
+
+  // Check if user is an organization admin
+  const isOrgAdmin =
+    membership?.role === "admin" || membership?.role === "org:admin";
 
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen);
@@ -19,7 +30,7 @@ export default function Header() {
   };
 
   return (
-    <header className="relative top-4">
+    <header className="relative my-2">
       <div className="container mx-auto px-4">
         <div className="flex h-16 items-center justify-between gap-4">
           {/* Logo */}
@@ -31,27 +42,36 @@ export default function Header() {
             >
               <Image src="/image.png" alt="logo" width="100" height="100" />
             </Link>
-
-            {/* Desktop Search - Hidden on mobile 
-            <div className="hidden md:block">
-              <SearchInput />
-            </div>
-            */}
           </div>
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-2 md:space-x-4">
-            {/*
-            <nav>
+            {/* Navigation Links */}
+            <nav className="flex items-center space-x-2">
+              {/* Course Link */}
               <Link
                 prefetch={false}
-                href="/my-courses"
+                href="/courses/precuity-ai"
                 className="flex space-x-2 items-center text-sm font-medium text-muted-foreground hover:text-foreground transition-colors md:border md:border-border md:rounded-md md:px-4 md:py-2"
               >
-                <BookMarkedIcon className="h-4 w-4" />
-                <span>My Courses</span>
+                <BookOpen className="h-4 w-4" />
+                <span>Course</span>
               </Link>
-            </nav>*/}
+
+              {/* Organization Admin Link - Only show for admins */}
+              <SignedIn>
+                {isOrgAdmin && (
+                  <Link
+                    prefetch={false}
+                    href="/dashboard/organization/invite"
+                    className="flex space-x-2 items-center text-sm font-medium text-muted-foreground hover:text-foreground transition-colors md:border md:border-border md:rounded-md md:px-4 md:py-2"
+                  >
+                    <Shield className="h-4 w-4" />
+                    <span>Organization Admin</span>
+                  </Link>
+                )}
+              </SignedIn>
+            </nav>
 
             <SignedIn>
               <UserButton />
@@ -85,25 +105,34 @@ export default function Header() {
       {isMenuOpen && (
         <div className="md:hidden absolute top-16 left-0 right-0 bg-background border-b border-border shadow-lg z-50">
           <div className="container mx-auto px-4 py-4 space-y-4">
-            {/* Mobile Search 
-            <div className="w-full">
-              <SearchInput />
-            </div>
-          */}
-            {/* Mobile Navigation 
+            {/* Mobile Navigation */}
             <nav className="space-y-2">
-              {/*
+              {/* Course Link */}
               <Link
                 prefetch={false}
-                href="/my-courses"
+                href="/courses/precuity-ai"
                 onClick={closeMenu}
                 className="flex items-center space-x-2 px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
               >
-                <BookMarkedIcon className="h-4 w-4" />
-                <span>My Courses</span>
+                <BookOpen className="h-4 w-4" />
+                <span>Course</span>
               </Link>
-         
-            </nav>     */}
+
+              {/* Organization Admin Link - Only show for admins */}
+              <SignedIn>
+                {isOrgAdmin && (
+                  <Link
+                    prefetch={false}
+                    href="/dashboard/organization/invite"
+                    onClick={closeMenu}
+                    className="flex items-center space-x-2 px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
+                  >
+                    <Shield className="h-4 w-4" />
+                    <span>Organization Admin</span>
+                  </Link>
+                )}
+              </SignedIn>
+            </nav>
 
             {/* Mobile Auth */}
             <div className="px-4 py-2 border-t border-border">
