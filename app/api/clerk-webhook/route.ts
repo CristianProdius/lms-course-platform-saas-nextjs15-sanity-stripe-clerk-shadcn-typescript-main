@@ -75,7 +75,8 @@ export async function POST(req: NextRequest) {
       if (response.ok) {
         const userData = await response.json();
         const primaryEmail = userData.email_addresses.find(
-          (email: any) => email.id === userData.primary_email_address_id
+          (email: { id: string; email_address: string }) =>
+            email.id === userData.primary_email_address_id
         );
 
         if (primaryEmail) {

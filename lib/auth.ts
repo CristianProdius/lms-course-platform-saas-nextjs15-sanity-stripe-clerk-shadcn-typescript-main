@@ -5,8 +5,12 @@ import { clerkClient } from "@clerk/nextjs/server";
 import { client } from "@/sanity/lib/adminClient";
 import groq from "groq";
 
-// ADD THESE TYPE DEFINITIONS
+// Import types from Sanity
 import type { User } from "@clerk/nextjs/server";
+import type {
+  Course as SanityCourse,
+  Enrollment as SanityEnrollment,
+} from "@/sanity.types";
 
 // Extend the Clerk User type to include organization memberships
 interface ClerkUserWithOrganizations extends User {
@@ -41,6 +45,23 @@ interface Organization {
   employeeLimit: number;
   stripeCustomerId?: string;
   clerkOrganizationId: string;
+}
+
+interface Course {
+  _id: string;
+  title: string;
+  description: string;
+  thumbnail: string;
+  price: number;
+  accessType: string;
+  isFree: boolean;
+  organizationName?: string;
+}
+
+interface Enrollment {
+  course: Course;
+  enrolledAt: string;
+  completedAt?: string;
 }
 
 export async function checkCourseAccess(
@@ -282,13 +303,16 @@ export async function getUserAccessibleCourses(userId: string) {
         completedAt
       }`;
 
-      const enrollments = await client.fetch(individualCoursesQuery, {
-        sanityUserId,
-      });
+      const enrollments: Enrollment[] = await client.fetch(
+        individualCoursesQuery,
+        {
+          sanityUserId,
+        }
+      );
 
       return {
         hasOrganizationAccess: false,
-        courses: enrollments.map((e: any) => e.course).filter(Boolean),
+        courses: enrollments.map((e: Enrollment) => e.course).filter(Boolean),
       };
     }
 
