@@ -5,7 +5,6 @@ import Link from "next/link";
 import { GraduationCap } from "lucide-react";
 import { getCourseProgress } from "@/sanity/lib/lessons/getCourseProgress";
 import { CourseCard } from "@/components/CourseCard";
-import type { GetEnrolledCoursesQueryResult } from "@/sanity.types";
 
 export default async function MyCoursesPage() {
   const user = await currentUser();

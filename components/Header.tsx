@@ -63,7 +63,7 @@ export default function Header() {
                 {isOrgAdmin && (
                   <Link
                     prefetch={false}
-                    href="/dashboard/organization/invite"
+                    href="/dashboard/admin"
                     className="flex space-x-2 items-center text-sm font-medium text-muted-foreground hover:text-foreground transition-colors md:border md:border-border md:rounded-md md:px-4 md:py-2"
                   >
                     <Shield className="h-4 w-4" />

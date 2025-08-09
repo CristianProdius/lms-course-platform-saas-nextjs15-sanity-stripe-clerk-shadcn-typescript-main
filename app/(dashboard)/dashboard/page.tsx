@@ -47,23 +47,6 @@ interface Course {
   modules?: Module[];
 }
 
-// Type for enrollment as returned by getEnrolledCourses with populated course
-interface EnrollmentWithCourse {
-  _id: string;
-  _type: "enrollment";
-  _createdAt: string;
-  _updatedAt: string;
-  _rev: string;
-  student?: {
-    _ref: string;
-    _type: "reference";
-  };
-  course: Course | null;
-  amount?: number;
-  paymentId?: string;
-  enrolledAt?: string;
-}
-
 interface CourseWithProgress {
   course: Course;
   progress: number;
@@ -88,14 +71,14 @@ export default async function DashboardPage() {
 
   // Get progress for each course
   const coursesWithProgress: CourseWithProgress[] = await Promise.all(
-    enrolledCourses.map(async (enrollment: any) => {
+    enrolledCourses.map(async (enrollment) => {
       const { course } = enrollment;
       if (!course) return null;
       const progress = await getCourseProgress(user.id, course._id);
 
       const totalLessons =
         course.modules?.reduce(
-          (acc: number, module: any) => acc + (module.lessons?.length || 0),
+          (acc: number, module) => acc + (module.lessons?.length || 0),
           0
         ) || 0;
 
