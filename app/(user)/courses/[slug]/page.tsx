@@ -275,9 +275,9 @@ export default async function CoursePage({ params }: CoursePageProps) {
                     Your Instructor
                   </h3>
                   <div className="flex items-start gap-4">
-                    {course.instructor.image && (
+                    {course.instructor.photo && (
                       <Image
-                        src={urlFor(course.instructor.image).url() || ""}
+                        src={urlFor(course.instructor.photo).url() || ""}
                         alt={course.instructor.name || "Instructor"}
                         width={60}
                         height={60}

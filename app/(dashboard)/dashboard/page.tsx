@@ -27,7 +27,7 @@ import Image from "next/image";
 import { urlFor } from "@/sanity/lib/image";
 
 interface Module {
-  lessons?: Array<{ _id: string; title: string }>;
+  lessons?: Array<{ _id: string; title?: string }>;
 }
 
 interface SanityImage {
@@ -42,13 +42,26 @@ interface SanityImage {
 
 interface Course {
   _id: string;
-  title: string;
+  title?: string;
   image?: SanityImage;
   modules?: Module[];
 }
 
-interface Enrollment {
-  course: Course;
+// Type for enrollment as returned by getEnrolledCourses with populated course
+interface EnrollmentWithCourse {
+  _id: string;
+  _type: "enrollment";
+  _createdAt: string;
+  _updatedAt: string;
+  _rev: string;
+  student?: {
+    _ref: string;
+    _type: "reference";
+  };
+  course: Course | null;
+  amount?: number;
+  paymentId?: string;
+  enrolledAt?: string;
 }
 
 interface CourseWithProgress {
@@ -75,14 +88,14 @@ export default async function DashboardPage() {
 
   // Get progress for each course
   const coursesWithProgress: CourseWithProgress[] = await Promise.all(
-    enrolledCourses.map(async (enrollment: Enrollment) => {
+    enrolledCourses.map(async (enrollment: any) => {
       const { course } = enrollment;
       if (!course) return null;
       const progress = await getCourseProgress(user.id, course._id);
 
       const totalLessons =
         course.modules?.reduce(
-          (acc: number, module: Module) => acc + (module.lessons?.length || 0),
+          (acc: number, module: any) => acc + (module.lessons?.length || 0),
           0
         ) || 0;
 
@@ -333,7 +346,7 @@ export default async function DashboardPage() {
                           <div className="relative w-48 h-32">
                             <Image
                               src={urlFor(courseData.course.image).url()}
-                              alt={courseData.course.title}
+                              alt={courseData.course.title || "Course image"}
                               fill
                               className="object-cover"
                             />
@@ -343,7 +356,7 @@ export default async function DashboardPage() {
                           <div className="flex items-start justify-between mb-4">
                             <div>
                               <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                                {courseData.course.title}
+                                {courseData.course.title || "Untitled Course"}
                               </h3>
                               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                                 {courseData.completedLessons} of{" "}

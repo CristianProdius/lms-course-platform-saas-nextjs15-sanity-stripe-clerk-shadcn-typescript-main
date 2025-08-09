@@ -5,6 +5,7 @@ import Link from "next/link";
 import { GraduationCap } from "lucide-react";
 import { getCourseProgress } from "@/sanity/lib/lessons/getCourseProgress";
 import { CourseCard } from "@/components/CourseCard";
+import type { GetEnrolledCoursesQueryResult } from "@/sanity.types";
 
 export default async function MyCoursesPage() {
   const user = await currentUser();
@@ -15,27 +16,18 @@ export default async function MyCoursesPage() {
 
   const enrolledCourses = await getEnrolledCourses(user.id);
 
-  // Get progress for each enrolled course
-  type EnrolledCourse = {
-    course: {
-      _id: string;
-      // add other course properties as needed
-      [key: string]: unknown;
-    } | null;
-    // add other enrolledCourse properties as needed
-    [key: string]: unknown;
-  };
-
   const coursesWithProgress = await Promise.all(
-    enrolledCourses.map(async ({ course }: EnrolledCourse) => {
+    enrolledCourses.map(async (enrollment) => {
+      const { course } = enrollment;
       if (!course) return null;
+
       const progress = await getCourseProgress(user.id, course._id);
       return {
         course,
         progress: progress.courseProgress,
       };
     })
-  );
+  ).then((results) => results.filter(Boolean));
 
   return (
     <div className="h-full pt-16">
