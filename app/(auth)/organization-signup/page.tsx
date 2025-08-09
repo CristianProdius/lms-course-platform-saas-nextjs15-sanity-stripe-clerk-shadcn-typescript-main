@@ -121,7 +121,7 @@ export default function OrganizationSignupPage() {
       }
 
       // Redirect to subscription selection
-      router.push("/subscription-plans");
+      router.push("/dashboard/organization/billing?newOrg=true");
     } catch (err) {
       console.error("Error creating organization:", err);
       setError(err instanceof Error ? err.message : "Something went wrong");

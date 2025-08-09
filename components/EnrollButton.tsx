@@ -2,7 +2,7 @@
 
 import { createStripeCheckout } from "@/actions/createStripeCheckout";
 import { useUser, useOrganization } from "@clerk/nextjs";
-import { CheckCircle, Building2 } from "lucide-react";
+import { CheckCircle, Building2, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
@@ -108,13 +108,13 @@ function EnrollButton({
 
       {/* Show message if user is in organization without subscription */}
       {isInOrgWithoutSubscription && (
-        <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-          <p className="text-xs text-blue-700 dark:text-blue-300 flex items-start gap-2">
-            <Building2 className="h-4 w-4 flex-shrink-0 mt-0.5" />
+        <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+          <p className="text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
             <span>
-              Your organization ({organization.name}) needs an active
-              subscription for you to access courses. Contact your admin or
-              purchase individually.
+              Your organization ({organization.name}) requires an active
+              subscription for course access. Please contact your administrator
+              to purchase a subscription or enroll individually.
             </span>
           </p>
         </div>

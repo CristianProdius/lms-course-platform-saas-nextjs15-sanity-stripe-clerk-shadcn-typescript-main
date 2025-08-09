@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useOrganization, useUser } from "@clerk/nextjs";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Card,
   CardContent,
@@ -17,6 +17,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader } from "@/components/ui/loader";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   CreditCard,
   Users,
@@ -144,8 +145,11 @@ interface BillingHistory {
 
 export default function OrganizationBillingPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, isLoaded: isUserLoaded } = useUser();
   const { organization, membership, isLoaded: isOrgLoaded } = useOrganization();
+
+  const isNewOrg = searchParams.get("newOrg") === "true";
 
   const [organizationData, setOrganizationData] =
     useState<OrganizationData | null>(null);
@@ -157,6 +161,7 @@ export default function OrganizationBillingPage() {
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showPlanSelection, setShowPlanSelection] = useState(false);
 
   // Check if user is admin
   const isAdmin =
@@ -175,6 +180,20 @@ export default function OrganizationBillingPage() {
       }
     }
   }, [isUserLoaded, isOrgLoaded, user, organization, isAdmin, router]);
+
+  // Handle plan selection navigation
+  useEffect(() => {
+    if (showPlanSelection) {
+      // Navigate to plans tab when plan selection is triggered
+      const plansTab = document.querySelector(
+        '[value="plans"]'
+      ) as HTMLButtonElement;
+      if (plansTab) {
+        plansTab.click();
+      }
+      setShowPlanSelection(false);
+    }
+  }, [showPlanSelection]);
 
   const fetchOrganizationData = async () => {
     if (!organization) return;
@@ -346,6 +365,19 @@ export default function OrganizationBillingPage() {
           </div>
         )}
 
+        {/* Welcome Message for New Organizations */}
+        {isNewOrg && !subscriptionData && (
+          <Alert className="mb-6 border-blue-200 bg-blue-50">
+            <Sparkles className="h-4 w-4" />
+            <AlertTitle>Welcome to Your Organization!</AlertTitle>
+            <AlertDescription>
+              Your organization has been created successfully. Purchase a
+              subscription to give your team members access to all training
+              courses.
+            </AlertDescription>
+          </Alert>
+        )}
+
         <Tabs defaultValue="overview" className="space-y-6">
           <TabsList className="grid w-full max-w-md grid-cols-3">
             <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -357,139 +389,163 @@ export default function OrganizationBillingPage() {
           <TabsContent value="overview" className="space-y-6">
             {/* Current Plan Card */}
             <Card className="overflow-hidden">
-              <div className={`h-2 bg-gradient-to-r ${currentPlan.gradient}`} />
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-12 h-12 rounded-xl bg-gradient-to-br ${currentPlan.lightGradient} flex items-center justify-center`}
-                    >
-                      <currentPlan.icon className="h-6 w-6 text-[#2A4666]" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-2xl">
-                        {currentPlan.name} Plan
-                      </CardTitle>
-                      <CardDescription>
-                        ${currentPlan.pricePerMonth}/month
-                      </CardDescription>
-                    </div>
-                  </div>
-                  <Badge
-                    variant={
-                      subscriptionData?.status === "active"
-                        ? "default"
-                        : "secondary"
-                    }
-                    className="text-sm"
-                  >
-                    {subscriptionData?.status || "No Subscription"}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Employee Usage */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Employee Seats
-                    </span>
-                    <span
-                      className={`text-sm font-bold ${
-                        isAtLimit
-                          ? "text-red-600"
-                          : isApproachingLimit
-                          ? "text-yellow-600"
-                          : "text-gray-700 dark:text-gray-300"
-                      }`}
-                    >
-                      {employeeCount} of {organizationData?.employeeLimit || 0}{" "}
-                      used
-                    </span>
-                  </div>
-                  <Progress
-                    value={usagePercentage}
-                    className={`h-3 ${
-                      isAtLimit
-                        ? "[&>div]:bg-red-600"
-                        : isApproachingLimit
-                        ? "[&>div]:bg-yellow-600"
-                        : ""
-                    }`}
-                  />
-                  {isApproachingLimit && (
-                    <p className="text-sm text-yellow-600 mt-2 flex items-center gap-1">
-                      <AlertCircle className="h-4 w-4" />
-                      {isAtLimit
-                        ? "Seat limit reached!"
-                        : "Approaching seat limit"}
-                    </p>
-                  )}
-                </div>
-
-                {/* Plan Features */}
-                <div>
-                  <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-3">
-                    Your plan includes:
-                  </h4>
-                  <div className="space-y-2">
-                    {currentPlan.features.map((feature, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400"
-                      >
-                        <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0" />
-                        <span>{feature}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Billing Period */}
-                {subscriptionData && (
-                  <div className="pt-4 border-t border-gray-200 dark:border-gray-800">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-600 dark:text-gray-400">
-                        Current period
-                      </span>
-                      <span className="font-medium text-gray-900 dark:text-gray-100">
-                        {new Date(
-                          subscriptionData.startDate
-                        ).toLocaleDateString()}{" "}
-                        -{" "}
-                        {subscriptionData.endDate
-                          ? new Date(
-                              subscriptionData.endDate
-                            ).toLocaleDateString()
-                          : "Ongoing"}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-              <CardFooter className="bg-gray-50 dark:bg-gray-800/50">
-                <div className="flex items-center justify-between w-full">
+              {!subscriptionData ? (
+                <div className="text-center py-8">
+                  <AlertCircle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">
+                    No Active Subscription
+                  </h3>
+                  <p className="text-gray-600 dark:text-gray-400 mb-6">
+                    Purchase a subscription to give your organization members
+                    access to all courses.
+                  </p>
                   <Button
-                    variant="outline"
-                    onClick={() =>
-                      router.push("/dashboard/organization/invite")
-                    }
-                    className="flex items-center gap-2"
+                    onClick={() => setShowPlanSelection(true)}
+                    className="bg-gradient-to-r from-[#FF4A1C] to-[#2A4666]"
                   >
-                    <Users className="h-4 w-4" />
-                    Manage Team
+                    <CreditCard className="w-4 h-4 mr-2" />
+                    Choose a Plan
                   </Button>
-                  {subscriptionData?.status === "active" && (
-                    <Button
-                      variant="outline"
-                      onClick={() => setShowCancelConfirm(true)}
-                      className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                    >
-                      Cancel Subscription
-                    </Button>
-                  )}
                 </div>
-              </CardFooter>
+              ) : (
+                <>
+                  <div
+                    className={`h-2 bg-gradient-to-r ${currentPlan.gradient}`}
+                  />
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-12 h-12 rounded-xl bg-gradient-to-br ${currentPlan.lightGradient} flex items-center justify-center`}
+                        >
+                          <currentPlan.icon className="h-6 w-6 text-[#2A4666]" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-2xl">
+                            {currentPlan.name} Plan
+                          </CardTitle>
+                          <CardDescription>
+                            ${currentPlan.pricePerMonth}/month
+                          </CardDescription>
+                        </div>
+                      </div>
+                      <Badge
+                        variant={
+                          subscriptionData?.status === "active"
+                            ? "default"
+                            : "secondary"
+                        }
+                        className="text-sm"
+                      >
+                        {subscriptionData?.status || "No Subscription"}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    {/* Employee Usage */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Employee Seats
+                        </span>
+                        <span
+                          className={`text-sm font-bold ${
+                            isAtLimit
+                              ? "text-red-600"
+                              : isApproachingLimit
+                              ? "text-yellow-600"
+                              : "text-gray-700 dark:text-gray-300"
+                          }`}
+                        >
+                          {employeeCount} of{" "}
+                          {organizationData?.employeeLimit || 0} used
+                        </span>
+                      </div>
+                      <Progress
+                        value={usagePercentage}
+                        className={`h-3 ${
+                          isAtLimit
+                            ? "[&>div]:bg-red-600"
+                            : isApproachingLimit
+                            ? "[&>div]:bg-yellow-600"
+                            : ""
+                        }`}
+                      />
+                      {isApproachingLimit && (
+                        <p className="text-sm text-yellow-600 mt-2 flex items-center gap-1">
+                          <AlertCircle className="h-4 w-4" />
+                          {isAtLimit
+                            ? "Seat limit reached!"
+                            : "Approaching seat limit"}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Plan Features */}
+                    <div>
+                      <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-3">
+                        Your plan includes:
+                      </h4>
+                      <div className="space-y-2">
+                        {currentPlan.features.map((feature, index) => (
+                          <div
+                            key={index}
+                            className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400"
+                          >
+                            <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0" />
+                            <span>{feature}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Billing Period */}
+                    {subscriptionData && (
+                      <div className="pt-4 border-t border-gray-200 dark:border-gray-800">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-600 dark:text-gray-400">
+                            Current period
+                          </span>
+                          <span className="font-medium text-gray-900 dark:text-gray-100">
+                            {new Date(
+                              subscriptionData.startDate
+                            ).toLocaleDateString()}{" "}
+                            -{" "}
+                            {subscriptionData.endDate
+                              ? new Date(
+                                  subscriptionData.endDate
+                                ).toLocaleDateString()
+                              : "Ongoing"}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                  <CardFooter className="bg-gray-50 dark:bg-gray-800/50">
+                    <div className="flex items-center justify-between w-full">
+                      <Button
+                        variant="outline"
+                        onClick={() =>
+                          router.push("/dashboard/organization/invite")
+                        }
+                        className="flex items-center gap-2"
+                      >
+                        <Users className="h-4 w-4" />
+                        Manage Team
+                      </Button>
+                      {subscriptionData?.status === "active" && (
+                        <Button
+                          variant="outline"
+                          onClick={() => setShowCancelConfirm(true)}
+                          className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                        >
+                          Cancel Subscription
+                        </Button>
+                      )}
+                    </div>
+                  </CardFooter>
+                </>
+              )}
             </Card>
 
             {/* Quick Stats */}

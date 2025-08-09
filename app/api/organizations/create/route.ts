@@ -1,20 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
 import { client } from "@/sanity/lib/adminClient";
+import { createStudentIfNotExists } from "@/sanity/lib/student/createStudentIfNotExists";
 
 export async function POST(req: NextRequest) {
   try {
-    // Verify user is authenticated
     const user = await currentUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Parse request body
     const body = await req.json();
     const { name, billingEmail, employeeLimit, clerkOrgId, adminUserId } = body;
 
-    // Validate required fields
     if (!name || !billingEmail || !employeeLimit || !clerkOrgId) {
       return NextResponse.json(
         { error: "Missing required fields" },
@@ -22,7 +20,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Verify the user making the request is the admin
     if (user.id !== adminUserId) {
       return NextResponse.json(
         { error: "Unauthorized - must be organization admin" },
@@ -30,9 +27,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Ensure user exists in Sanity first
+    await createStudentIfNotExists({
+      clerkId: user.id,
+      email: user.primaryEmailAddress?.emailAddress || "",
+      firstName: user.firstName || "",
+      lastName: user.lastName || "",
+      imageUrl: user.imageUrl || "",
+    });
+
     // Check if organization already exists
     const existingOrg = await client.fetch(
-      `*[_type == "organization" && stripeCustomerId == $clerkOrgId][0]`,
+      `*[_type == "organization" && (clerkOrganizationId == $clerkOrgId || stripeCustomerId == $clerkOrgId)][0]`,
       { clerkOrgId }
     );
 
@@ -43,16 +49,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Create organization in Sanity
+    // Create organization in Sanity - NO TRIAL, starts as inactive
     const organization = await client.create({
       _type: "organization",
       name,
       billingEmail,
       employeeLimit,
-      subscriptionStatus: "trial",
-      activeStatus: true,
+      subscriptionStatus: "inactive", // No trial - starts as inactive
+      activeStatus: false, // Not active until subscription
       createdAt: new Date().toISOString(),
-      stripeCustomerId: clerkOrgId, // Using Clerk org ID temporarily until Stripe customer is created
+      clerkOrganizationId: clerkOrgId, // Store Clerk org ID
+      stripeCustomerId: null, // Will be set when subscription is created
     });
 
     // Update the user to add organization reference and admin role
@@ -70,8 +77,7 @@ export async function POST(req: NextRequest) {
             _ref: organization._id,
           },
           role: "admin",
-          invitedDate: new Date().toISOString(),
-          acceptedDate: new Date().toISOString(),
+          organizationRole: "org:admin",
         })
         .commit();
     }
@@ -83,6 +89,7 @@ export async function POST(req: NextRequest) {
         name: organization.name,
         billingEmail: organization.billingEmail,
         employeeLimit: organization.employeeLimit,
+        subscriptionStatus: organization.subscriptionStatus,
       },
     });
   } catch (error) {

@@ -97,15 +97,15 @@ export async function checkOrganizationCourseAccess(
 
     // 2. Check organization-based access first (B2B)
     if (organizationMemberships.length > 0) {
-      // Get all organization IDs the user belongs to
       const orgIds = organizationMemberships.map(
         (membership) => membership.organization.id
       );
 
-      // Query Sanity for organizations with active subscriptions ONLY (no trials)
+      // Query Sanity for organizations with ACTIVE PAID subscriptions only
       const organizationQuery = groq`*[_type == "organization" && 
         clerkOrganizationId in $orgIds && 
-        subscriptionStatus == "active"
+        subscriptionStatus == "active" &&
+        stripeCustomerId != null
       ][0] {
         _id,
         name,
@@ -120,8 +120,8 @@ export async function checkOrganizationCourseAccess(
         { orgIds }
       );
 
-      if (organization) {
-        // 3. IMPORTANT: Verify there's an actual subscription record
+      if (organization && organization.stripeCustomerId) {
+        // Verify there's an actual subscription record
         const subscriptionQuery = groq`*[_type == "subscription" && 
           organization._ref == $organizationId && 
           status == "active" &&
@@ -141,18 +141,23 @@ export async function checkOrganizationCourseAccess(
 
         // Only grant access if there's a valid Stripe subscription
         if (subscription && subscription.stripeSubscriptionId) {
-          return {
-            hasAccess: true,
-            accessType: "organization",
-            organizationName: organization.name,
-            subscriptionPlan:
-              subscription.plan || organization.subscriptionStatus,
-          };
+          // Verify subscription is not expired
+          const currentDate = new Date();
+          const periodEnd = new Date(subscription.currentPeriodEnd);
+
+          if (periodEnd > currentDate) {
+            return {
+              hasAccess: true,
+              accessType: "organization",
+              organizationName: organization.name,
+              subscriptionPlan: subscription.plan,
+            };
+          }
         }
       }
     }
 
-    // 4. Fall back to individual enrollment check (B2C users)
+    // 3. Fall back to individual enrollment check (B2C users)
     const authResult = await checkCourseAccess(userId, courseId);
 
     if (authResult.isAuthorized) {
@@ -162,11 +167,14 @@ export async function checkOrganizationCourseAccess(
       };
     }
 
-    // 5. No access found
+    // 4. No access found
     return {
       hasAccess: false,
       accessType: "none",
-      reason: "No active subscription or individual enrollment found",
+      reason:
+        organizationMemberships.length > 0
+          ? "Your organization needs an active paid subscription to access courses"
+          : "No active subscription or individual enrollment found",
     };
   } catch (error) {
     console.error("Error checking course access:", error);
@@ -192,7 +200,7 @@ export async function hasAnyCourseAccess(
 
 /**
  * Get all accessible courses for a user (both org and individual)
- * Useful for displaying available courses in the dashboard
+ * Only shows courses for organizations with PAID subscriptions
  */
 export async function getUserAccessibleCourses(userId: string) {
   try {
@@ -207,41 +215,54 @@ export async function getUserAccessibleCourses(userId: string) {
         (membership) => membership.organization.id
       );
 
-      // Check for active subscription ONLY (no trials)
+      // Check for active PAID subscription only
       const orgWithActiveSubQuery = groq`*[_type == "organization" && 
         clerkOrganizationId in $orgIds && 
-        subscriptionStatus == "active"
+        subscriptionStatus == "active" &&
+        stripeCustomerId != null
       ][0]`;
 
       const activeOrg = await client.fetch(orgWithActiveSubQuery, { orgIds });
 
       if (activeOrg) {
-        // EMPLOYEE HAS ACCESS TO ALL COURSES FOR FREE
-        const allCoursesQuery = groq`*[_type == "course" && !(_id in path("drafts.**"))] {
-          _id,
-          title,
-          description,
-          thumbnail,
-          price,
-          "accessType": "organization",
-          "isFree": true,
-          "organizationName": $orgName
-        }`;
+        // Verify there's an actual subscription record
+        const subscriptionQuery = groq`*[_type == "subscription" && 
+          organization._ref == $orgId && 
+          status == "active"
+        ][0]`;
 
-        const courses = await client.fetch(allCoursesQuery, {
-          orgName: activeOrg.name,
+        const subscription = await client.fetch(subscriptionQuery, {
+          orgId: activeOrg._id,
         });
 
-        return {
-          hasOrganizationAccess: true,
-          organizationName: activeOrg.name,
-          courses: courses,
-        };
+        if (subscription) {
+          // EMPLOYEE HAS ACCESS TO ALL COURSES
+          const allCoursesQuery = groq`*[_type == "course" && !(_id in path("drafts.**"))] {
+            _id,
+            title,
+            description,
+            thumbnail,
+            price,
+            "accessType": "organization",
+            "isFree": true,
+            "organizationName": $orgName
+          }`;
+
+          const courses = await client.fetch(allCoursesQuery, {
+            orgName: activeOrg.name,
+          });
+
+          return {
+            hasOrganizationAccess: true,
+            organizationName: activeOrg.name,
+            courses: courses,
+          };
+        }
       }
     }
 
     // For B2C users, get their individually purchased courses
-    const userQuery = groq`*[_type == "user" && clerkId == $userId][0]._id`;
+    const userQuery = groq`*[_type == "student" && clerkId == $userId][0]._id`;
     const sanityUserId = await client.fetch(userQuery, { userId });
 
     if (sanityUserId) {
@@ -267,19 +288,7 @@ export async function getUserAccessibleCourses(userId: string) {
 
       return {
         hasOrganizationAccess: false,
-        courses: enrollments.map(
-          (e: {
-            course: {
-              _id: string;
-              title: string;
-              description: string;
-              thumbnail: string;
-              price: number;
-              accessType: string;
-              isFree: boolean;
-            };
-          }) => e.course
-        ),
+        courses: enrollments.map((e: any) => e.course).filter(Boolean),
       };
     }
 
