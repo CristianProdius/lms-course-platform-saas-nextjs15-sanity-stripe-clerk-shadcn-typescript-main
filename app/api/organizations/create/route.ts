@@ -77,7 +77,6 @@ export async function POST(req: NextRequest) {
             _ref: organization._id,
           },
           role: "admin",
-          organizationRole: "org:admin",
         })
         .commit();
     }
