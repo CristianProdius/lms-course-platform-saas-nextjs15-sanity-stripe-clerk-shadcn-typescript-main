@@ -3,9 +3,6 @@
 import { useAuth, useOrganization } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { isEnrolledInCourse } from "@/sanity/lib/student/isEnrolledInCourse";
-import { getStudentByClerkId } from "@/sanity/lib/student/getStudentByClerkId";
-import { checkOrganizationCourseAccess } from "@/lib/auth";
 import { AlertCircle, Building2, ShoppingCart } from "lucide-react";
 import { loadStripe } from "@stripe/stripe-js";
 
@@ -13,16 +10,26 @@ const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
 );
 
-function EnrollButton({ courseId }: { courseId: string }) {
+// Props interface
+interface EnrollButtonProps {
+  courseId: string;
+  isEnrolled?: boolean;
+  hasValidOrgAccess?: boolean;
+}
+
+function EnrollButton({
+  courseId,
+  isEnrolled: initialIsEnrolled = false,
+  hasValidOrgAccess: initialHasOrgAccess = false,
+}: EnrollButtonProps) {
   const { userId } = useAuth();
   const { organization, membership } = useOrganization();
   const router = useRouter();
   const [isPending, setIsPending] = useState(false);
-  const [isEnrolled, setIsEnrolled] = useState(false);
+  const [isEnrolled, setIsEnrolled] = useState(initialIsEnrolled);
   const [isOrgPurchase, setIsOrgPurchase] = useState(false);
-  const [hasOrgAccess, setHasOrgAccess] = useState(false);
+  const [hasOrgAccess, setHasOrgAccess] = useState(initialHasOrgAccess);
   const [loading, setLoading] = useState(true);
-  const [student, setStudent] = useState<any>(null);
 
   const isOrgAdmin =
     membership?.role === "org:admin" || membership?.role === "admin";
@@ -35,19 +42,18 @@ function EnrollButton({ courseId }: { courseId: string }) {
       }
 
       try {
-        // Check individual enrollment
-        const enrolled = await isEnrolledInCourse(userId, courseId);
-        setIsEnrolled(enrolled);
+        // Check enrollment status via API to avoid server imports
+        const response = await fetch("/api/check-enrollment", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, courseId }),
+        });
 
-        // Get student data
-        const studentData = await getStudentByClerkId(userId);
-        setStudent(studentData?.data);
-
-        // Check organization access
-        const orgAccess = await checkOrganizationCourseAccess(userId, courseId);
-        setHasOrgAccess(
-          orgAccess.hasAccess && orgAccess.accessType === "organization"
-        );
+        if (response.ok) {
+          const data = await response.json();
+          setIsEnrolled(data.isEnrolled);
+          setHasOrgAccess(data.hasOrgAccess);
+        }
       } catch (error) {
         console.error("Error checking access:", error);
       } finally {
@@ -55,8 +61,13 @@ function EnrollButton({ courseId }: { courseId: string }) {
       }
     }
 
-    checkAccess();
-  }, [userId, courseId]);
+    // Only check if not already provided via props
+    if (!initialIsEnrolled && !initialHasOrgAccess) {
+      checkAccess();
+    } else {
+      setLoading(false);
+    }
+  }, [userId, courseId, initialIsEnrolled, initialHasOrgAccess]);
 
   const handleIndividualEnroll = async () => {
     if (!userId) {
@@ -78,14 +89,20 @@ function EnrollButton({ courseId }: { courseId: string }) {
         return;
       }
 
-      const stripe = await stripePromise;
-      const { error } = await stripe!.redirectToCheckout({
-        sessionId: data.sessionId,
-      });
+      if (data.url) {
+        // Direct redirect for free courses
+        router.push(data.url);
+      } else if (data.sessionId) {
+        // Stripe checkout for paid courses
+        const stripe = await stripePromise;
+        const { error } = await stripe!.redirectToCheckout({
+          sessionId: data.sessionId,
+        });
 
-      if (error) {
-        console.error("Stripe error:", error);
-        alert("Payment failed. Please try again.");
+        if (error) {
+          console.error("Stripe error:", error);
+          alert("Payment failed. Please try again.");
+        }
       }
     } catch (error) {
       console.error("Error:", error);

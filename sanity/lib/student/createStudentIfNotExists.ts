@@ -1,6 +1,7 @@
+// sanity/lib/student/createStudentIfNotExistsServer.ts
+// This version is safe to use in API routes and server components
 import groq from "groq";
 import { client } from "../adminClient";
-import { sanityFetch } from "../live";
 
 interface CreateStudentProps {
   clerkId: string;
@@ -10,35 +11,40 @@ interface CreateStudentProps {
   imageUrl?: string;
 }
 
-export async function createStudentIfNotExists({
+export async function createStudentIfNotExistsServer({
   clerkId,
   email,
   firstName,
   lastName,
   imageUrl,
 }: CreateStudentProps) {
-  // First check if student exists
-  const existingStudentQuery = await sanityFetch({
-    query: groq`*[_type == "student" && clerkId == $clerkId][0]`,
-    params: { clerkId },
-  });
+  try {
+    // First check if student exists using the admin client
+    const existingStudentQuery = groq`*[_type == "student" && clerkId == $clerkId][0]`;
+    const existingStudent = await client.fetch(existingStudentQuery, {
+      clerkId,
+    });
 
-  if (existingStudentQuery.data) {
-    console.log("Student already exists", existingStudentQuery.data);
-    return existingStudentQuery.data;
+    if (existingStudent) {
+      console.log("Student already exists:", existingStudent._id);
+      return existingStudent;
+    }
+
+    // If no student exists, create a new one
+    const newStudent = await client.create({
+      _type: "student",
+      clerkId,
+      email,
+      firstName: firstName || email.split("@")[0],
+      lastName: lastName || "",
+      imageUrl: imageUrl || "",
+      createdAt: new Date().toISOString(),
+    });
+
+    console.log("New student created:", newStudent._id);
+    return newStudent;
+  } catch (error) {
+    console.error("Error in createStudentIfNotExistsServer:", error);
+    throw error;
   }
-
-  // If no student exists, create a new one
-  const newStudent = await client.create({
-    _type: "student",
-    clerkId,
-    email,
-    firstName,
-    lastName,
-    imageUrl,
-  });
-
-  console.log("New student created", newStudent);
-
-  return newStudent;
 }

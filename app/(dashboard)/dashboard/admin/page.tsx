@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { currentUser } from "@clerk/nextjs/server";
-import { getStudentByClerkId } from "@/sanity/lib/student/getStudentByClerkId";
+
 import Link from "next/link";
 import {
   Users,
@@ -222,8 +222,19 @@ export default async function AdminDashboardPage() {
   }
 
   // Get student data to check if user is admin
-  const studentData = await getStudentByClerkId(user.id);
-  const student = studentData?.data;
+  const studentQuery = groq`*[_type == "student" && clerkId == $clerkId][0] {
+  _id,
+  firstName,
+  lastName,
+  email,
+  clerkId,
+  imageUrl,
+  organization,
+  role,
+  invitedDate,
+  acceptedDate
+}`;
+  const student = await client.fetch(studentQuery, { clerkId: user.id });
 
   if (!student?.organization || student.role !== "admin") {
     return redirect("/dashboard");
