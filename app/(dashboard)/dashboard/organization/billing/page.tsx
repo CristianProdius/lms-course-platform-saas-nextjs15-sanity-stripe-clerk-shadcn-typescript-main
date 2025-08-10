@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useOrganization, useUser } from "@clerk/nextjs";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -167,35 +167,8 @@ export default function OrganizationBillingPage() {
   const isAdmin =
     membership?.role === "admin" || membership?.role === "org:admin";
 
-  useEffect(() => {
-    if (isUserLoaded && isOrgLoaded) {
-      if (!user) {
-        router.push("/");
-      } else if (!organization) {
-        router.push("/organization-signup");
-      } else if (!isAdmin) {
-        router.push("/my-courses");
-      } else {
-        fetchOrganizationData();
-      }
-    }
-  }, [isUserLoaded, isOrgLoaded, user, organization, isAdmin, router]);
-
-  // Handle plan selection navigation
-  useEffect(() => {
-    if (showPlanSelection) {
-      // Navigate to plans tab when plan selection is triggered
-      const plansTab = document.querySelector(
-        '[value="plans"]'
-      ) as HTMLButtonElement;
-      if (plansTab) {
-        plansTab.click();
-      }
-      setShowPlanSelection(false);
-    }
-  }, [showPlanSelection]);
-
-  const fetchOrganizationData = async () => {
+  // Memoize fetchOrganizationData using useCallback to fix the dependency warning
+  const fetchOrganizationData = useCallback(async () => {
     if (!organization) return;
 
     try {
@@ -219,7 +192,43 @@ export default function OrganizationBillingPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [organization]);
+
+  useEffect(() => {
+    if (isUserLoaded && isOrgLoaded) {
+      if (!user) {
+        router.push("/");
+      } else if (!organization) {
+        router.push("/organization-signup");
+      } else if (!isAdmin) {
+        router.push("/my-courses");
+      } else {
+        fetchOrganizationData();
+      }
+    }
+  }, [
+    isUserLoaded,
+    isOrgLoaded,
+    user,
+    organization,
+    isAdmin,
+    router,
+    fetchOrganizationData,
+  ]);
+
+  // Handle plan selection navigation
+  useEffect(() => {
+    if (showPlanSelection) {
+      // Navigate to plans tab when plan selection is triggered
+      const plansTab = document.querySelector(
+        '[value="plans"]'
+      ) as HTMLButtonElement;
+      if (plansTab) {
+        plansTab.click();
+      }
+      setShowPlanSelection(false);
+    }
+  }, [showPlanSelection]);
 
   const handlePlanChange = async (newPlanId: string) => {
     if (!subscriptionData?.stripeSubscriptionId) return;

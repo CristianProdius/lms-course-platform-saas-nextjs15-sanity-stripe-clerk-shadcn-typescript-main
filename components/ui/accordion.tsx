@@ -23,7 +23,7 @@ AccordionItem.displayName = "AccordionItem";
 const AccordionTrigger = React.forwardRef<
   React.ElementRef<typeof AccordionPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof AccordionPrimitive.Trigger>
->(({ className, children, ...props }, ref) => {
+>(({ className, children, onClick, onFocus, ...props }, ref) => {
   const innerRef = React.useRef<HTMLButtonElement>(null);
 
   // Handle click to prevent scroll jump
@@ -36,7 +36,7 @@ const AccordionTrigger = React.forwardRef<
       const currentScrollTop = scrollableParent?.scrollTop || 0;
 
       // Call original onClick if provided
-      props.onClick?.(e);
+      onClick?.(e);
 
       // Restore scroll position after state change
       requestAnimationFrame(() => {
@@ -45,7 +45,7 @@ const AccordionTrigger = React.forwardRef<
         }
       });
     },
-    [props.onClick]
+    [onClick]
   );
 
   // Handle focus to prevent scroll jump
@@ -58,7 +58,7 @@ const AccordionTrigger = React.forwardRef<
       const currentScrollTop = scrollableParent?.scrollTop || 0;
 
       // Call original onFocus if provided
-      props.onFocus?.(e);
+      onFocus?.(e);
 
       // Restore scroll position
       requestAnimationFrame(() => {
@@ -67,7 +67,7 @@ const AccordionTrigger = React.forwardRef<
         }
       });
     },
-    [props.onFocus]
+    [onFocus]
   );
 
   return (
