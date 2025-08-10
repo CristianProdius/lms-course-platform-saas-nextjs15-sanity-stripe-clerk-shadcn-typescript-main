@@ -1,125 +1,241 @@
 "use client";
 
-import { createStripeCheckout } from "@/actions/createStripeCheckout";
-import { useUser, useOrganization } from "@clerk/nextjs";
-import { CheckCircle, Building2, AlertCircle } from "lucide-react";
-import Link from "next/link";
+import { useAuth, useOrganization } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useState, useEffect } from "react";
+import { isEnrolledInCourse } from "@/sanity/lib/student/isEnrolledInCourse";
+import { getStudentByClerkId } from "@/sanity/lib/student/getStudentByClerkId";
+import { checkOrganizationCourseAccess } from "@/lib/auth";
+import { AlertCircle, Building2, ShoppingCart } from "lucide-react";
+import { loadStripe } from "@stripe/stripe-js";
 
-interface EnrollButtonProps {
-  courseId: string;
-  isEnrolled: boolean;
-  hasValidOrgAccess?: boolean; // New prop for validated organization access
-}
+const stripePromise = loadStripe(
+  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
+);
 
-function EnrollButton({
-  courseId,
-  isEnrolled,
-  hasValidOrgAccess = false,
-}: EnrollButtonProps) {
-  const { user, isLoaded: isUserLoaded } = useUser();
+function EnrollButton({ courseId }: { courseId: string }) {
+  const { userId } = useAuth();
   const { organization, membership } = useOrganization();
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setIsPending] = useState(false);
+  const [isEnrolled, setIsEnrolled] = useState(false);
+  const [isOrgPurchase, setIsOrgPurchase] = useState(false);
+  const [hasOrgAccess, setHasOrgAccess] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [student, setStudent] = useState<any>(null);
 
-  const handleEnroll = async (courseId: string) => {
-    startTransition(async () => {
-      try {
-        const userId = user?.id;
-        if (!userId) return;
+  const isOrgAdmin =
+    membership?.role === "org:admin" || membership?.role === "admin";
 
-        const { url } = await createStripeCheckout(courseId, userId);
-        if (url) {
-          router.push(url);
-        }
-      } catch (error) {
-        console.error("Error in handleEnroll:", error);
-        throw new Error("Failed to create checkout session");
+  useEffect(() => {
+    async function checkAccess() {
+      if (!userId) {
+        setLoading(false);
+        return;
       }
-    });
+
+      try {
+        // Check individual enrollment
+        const enrolled = await isEnrolledInCourse(userId, courseId);
+        setIsEnrolled(enrolled);
+
+        // Get student data
+        const studentData = await getStudentByClerkId(userId);
+        setStudent(studentData?.data);
+
+        // Check organization access
+        const orgAccess = await checkOrganizationCourseAccess(userId, courseId);
+        setHasOrgAccess(
+          orgAccess.hasAccess && orgAccess.accessType === "organization"
+        );
+      } catch (error) {
+        console.error("Error checking access:", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    checkAccess();
+  }, [userId, courseId]);
+
+  const handleIndividualEnroll = async () => {
+    if (!userId) {
+      router.push("/sign-in");
+      return;
+    }
+
+    setIsPending(true);
+    try {
+      const response = await fetch("/api/stripe-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ courseId }),
+      });
+
+      const data = await response.json();
+      if (data.error) {
+        alert(data.error);
+        return;
+      }
+
+      const stripe = await stripePromise;
+      const { error } = await stripe!.redirectToCheckout({
+        sessionId: data.sessionId,
+      });
+
+      if (error) {
+        console.error("Stripe error:", error);
+        alert("Payment failed. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      alert("Something went wrong. Please try again.");
+    } finally {
+      setIsPending(false);
+    }
   };
 
-  // Show loading state while checking user is loading
-  if (!isUserLoaded || isPending) {
+  const handleOrganizationPurchase = async () => {
+    if (!userId || !organization) {
+      router.push("/sign-in");
+      return;
+    }
+
+    setIsPending(true);
+    setIsOrgPurchase(true);
+    try {
+      const response = await fetch("/api/organization-course-purchase", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ courseId }),
+      });
+
+      const data = await response.json();
+      if (data.error) {
+        alert(data.error);
+        return;
+      }
+
+      const stripe = await stripePromise;
+      const { error } = await stripe!.redirectToCheckout({
+        sessionId: data.sessionId,
+      });
+
+      if (error) {
+        console.error("Stripe error:", error);
+        alert("Payment failed. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      alert("Something went wrong. Please try again.");
+    } finally {
+      setIsPending(false);
+      setIsOrgPurchase(false);
+    }
+  };
+
+  if (loading) {
     return (
-      <div className="w-full h-12 rounded-lg bg-gray-100 flex items-center justify-center">
-        <div className="w-5 h-5 border-2 border-gray-400 border-t-gray-600 rounded-full animate-spin" />
-      </div>
+      <div className="w-full h-12 bg-gray-200 animate-pulse rounded-lg"></div>
     );
   }
 
-  // Show enrolled state with link to course
-  if (isEnrolled) {
+  // If user already has access
+  if (isEnrolled || hasOrgAccess) {
     return (
-      <Link
-        prefetch={false}
-        href={`/dashboard/courses/${courseId}`}
-        className="w-full rounded-lg px-6 py-3 font-medium bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:from-green-600 hover:to-emerald-600 transition-all duration-300 h-12 flex items-center justify-center gap-2 group"
-      >
-        <span>Access Course</span>
-        <CheckCircle className="w-5 h-5 group-hover:scale-110 transition-transform" />
-      </Link>
-    );
-  }
-
-  // Show organization access button ONLY if organization has a valid subscription
-  if (hasValidOrgAccess && organization) {
-    return (
-      <Link
-        prefetch={false}
-        href={`/dashboard/courses/${courseId}`}
-        className="w-full rounded-lg px-6 py-3 font-medium bg-gradient-to-r from-blue-500 to-indigo-500 text-white hover:from-blue-600 hover:to-indigo-600 transition-all duration-300 h-12 flex items-center justify-center gap-2 group"
-      >
-        <Building2 className="w-5 h-5" />
-        <span>Access via Organization</span>
-      </Link>
-    );
-  }
-
-  // Check if user is in an organization but without valid subscription
-  const isInOrgWithoutSubscription =
-    !!(organization && membership) && !hasValidOrgAccess;
-
-  // Show enroll button
-  return (
-    <>
       <button
-        className={`w-full rounded-lg px-6 py-3 font-medium transition-all duration-300 ease-in-out relative h-12
-          ${
-            isPending || !user?.id
-              ? "bg-gray-300 cursor-not-allowed text-gray-500"
-              : "bg-gradient-to-r from-[#FF4A1C] to-[#2A4666] hover:from-[#FF4A1C]/90 hover:to-[#2A4666]/90 text-white shadow-lg hover:shadow-xl"
-          }`}
-        onClick={() => handleEnroll(courseId)}
-        disabled={isPending || !user?.id}
+        className="w-full rounded-lg px-6 py-3 font-medium bg-green-600 text-white"
+        onClick={() => router.push(`/courses/${courseId}/lessons`)}
       >
-        {!user?.id ? (
-          "Sign in to Enroll"
-        ) : isPending ? (
+        {hasOrgAccess ? "Access Course (Organization)" : "Continue Learning"}
+      </button>
+    );
+  }
+
+  // If user is not signed in
+  if (!userId) {
+    return (
+      <button
+        className="w-full rounded-lg px-6 py-3 font-medium bg-gray-300 text-gray-500"
+        onClick={() => router.push("/sign-in")}
+      >
+        Sign in to Enroll
+      </button>
+    );
+  }
+
+  // Show purchase options
+  return (
+    <div className="space-y-3">
+      {/* Individual Purchase Button */}
+      <button
+        className={`w-full rounded-lg px-6 py-3 font-medium transition-all duration-300 ${
+          isPending && !isOrgPurchase
+            ? "bg-gray-300 cursor-not-allowed text-gray-500"
+            : "bg-gradient-to-r from-[#FF4A1C] to-[#2A4666] text-white hover:opacity-90"
+        }`}
+        onClick={handleIndividualEnroll}
+        disabled={isPending}
+      >
+        {isPending && !isOrgPurchase ? (
           <span className="flex items-center justify-center gap-2">
-            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-current border-r-transparent"></span>
+            <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
             Processing...
           </span>
         ) : (
-          "Enroll Now"
+          <span className="flex items-center justify-center gap-2">
+            <ShoppingCart className="h-4 w-4" />
+            Enroll for Yourself
+          </span>
         )}
       </button>
 
-      {/* Show message if user is in organization without subscription */}
-      {isInOrgWithoutSubscription && (
-        <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
-          <p className="text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-            <span>
-              Your organization ({organization.name}) requires an active
-              subscription for course access. Please contact your administrator
-              to purchase a subscription or enroll individually.
-            </span>
-          </p>
-        </div>
+      {/* Organization Purchase Button - Only for Admins */}
+      {isOrgAdmin && organization && (
+        <>
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-300"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-white text-gray-500">OR</span>
+            </div>
+          </div>
+
+          <button
+            className={`w-full rounded-lg px-6 py-3 font-medium transition-all duration-300 ${
+              isPending && isOrgPurchase
+                ? "bg-gray-300 cursor-not-allowed text-gray-500"
+                : "bg-gradient-to-r from-[#2A4666] to-[#FF4A1C] text-white hover:opacity-90"
+            }`}
+            onClick={handleOrganizationPurchase}
+            disabled={isPending}
+          >
+            {isPending && isOrgPurchase ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
+                Processing...
+              </span>
+            ) : (
+              <span className="flex items-center justify-center gap-2">
+                <Building2 className="h-4 w-4" />
+                Purchase for {organization.name}
+              </span>
+            )}
+          </button>
+
+          <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+            <p className="text-xs text-blue-700 dark:text-blue-300 flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              <span>
+                Purchasing for your organization will give all current and
+                future team members access to this course.
+              </span>
+            </p>
+          </div>
+        </>
       )}
-    </>
+    </div>
   );
 }
 

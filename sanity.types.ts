@@ -13,6 +13,37 @@
  */
 
 // Source: schema.json
+export type OrganizationCourse = {
+  _id: string;
+  _type: "organizationCourse";
+  _createdAt: string;
+  _updatedAt: string;
+  _rev: string;
+  organization?: {
+    _ref: string;
+    _type: "reference";
+    _weak?: boolean;
+    [internalGroqTypeReferenceTo]?: "organization";
+  };
+  course?: {
+    _ref: string;
+    _type: "reference";
+    _weak?: boolean;
+    [internalGroqTypeReferenceTo]?: "course";
+  };
+  purchasedBy?: {
+    _ref: string;
+    _type: "reference";
+    _weak?: boolean;
+    [internalGroqTypeReferenceTo]?: "student";
+  };
+  amount?: number;
+  paymentId?: string;
+  purchasedAt?: string;
+  expiresAt?: string;
+  isActive?: boolean;
+};
+
 export type Subscription = {
   _id: string;
   _type: "subscription";
@@ -419,8 +450,16 @@ export type SanityAssetSourceData = {
   url?: string;
 };
 
-export type AllSanitySchemaTypes = Subscription | LessonCompletion | Enrollment | Student | Organization | BlockContent | Lesson | Module | Course | Instructor | Category | SanityImagePaletteSwatch | SanityImagePalette | SanityImageDimensions | SanityImageHotspot | SanityImageCrop | SanityFileAsset | SanityImageAsset | SanityImageMetadata | Geopoint | Slug | SanityAssetSourceData;
+export type AllSanitySchemaTypes = OrganizationCourse | Subscription | LessonCompletion | Enrollment | Student | Organization | BlockContent | Lesson | Module | Course | Instructor | Category | SanityImagePaletteSwatch | SanityImagePalette | SanityImageDimensions | SanityImageHotspot | SanityImageCrop | SanityFileAsset | SanityImageAsset | SanityImageMetadata | Geopoint | Slug | SanityAssetSourceData;
 export declare const internalGroqTypeReferenceTo: unique symbol;
+// Source: app/api/clerk-webhook/route.ts
+// Variable: orgQuery
+// Query: *[_type == "organization" && clerkOrganizationId == $clerkOrgId][0]._id
+export type OrgQueryResult = string | null;
+// Variable: studentQuery
+// Query: *[_type == "student" && clerkId == $clerkId][0]._id
+export type StudentQueryResult = string | null;
+
 // Source: sanity/lib/courses/getCourseById.ts
 // Variable: getCourseByIdQuery
 // Query: *[_type == "course" && _id == $id][0] {      ...,  // Spread all course fields      "category": category->{...},  // Expand the category reference, including all its fields      "instructor": instructor->{...},  // Expand the instructor reference, including all its fields      "modules": modules[]-> {  // Expand the array of module references        ...,  // Include all module fields        "lessons": lessons[]-> {...}  // For each module, expand its array of lesson references      }    }
@@ -1395,39 +1434,12 @@ export type GetStudentByClerkIdQueryResult = {
   acceptedDate: string | null;
 } | null;
 
-// Source: sanity/lib/student/isEnrolledInCourse.ts
-// Variable: studentQuery
-// Query: *[_type == "student" && clerkId == $clerkId][0]._id
-export type StudentQueryResult = string | null;
-// Variable: enrollmentQuery
-// Query: *[_type == "enrollment" && student._ref == $studentId && course._ref == $courseId][0]
-export type EnrollmentQueryResult = {
-  _id: string;
-  _type: "enrollment";
-  _createdAt: string;
-  _updatedAt: string;
-  _rev: string;
-  student?: {
-    _ref: string;
-    _type: "reference";
-    _weak?: boolean;
-    [internalGroqTypeReferenceTo]?: "student";
-  };
-  course?: {
-    _ref: string;
-    _type: "reference";
-    _weak?: boolean;
-    [internalGroqTypeReferenceTo]?: "course";
-  };
-  amount?: number;
-  paymentId?: string;
-  enrolledAt?: string;
-} | null;
-
 // Query TypeMap
 import "@sanity/client";
 declare module "@sanity/client" {
   interface SanityQueries {
+    "*[_type == \"organization\" && clerkOrganizationId == $clerkOrgId][0]._id": OrgQueryResult;
+    "*[_type == \"student\" && clerkId == $clerkId][0]._id": StudentQueryResult;
     "*[_type == \"course\" && _id == $id][0] {\n      ...,  // Spread all course fields\n      \"category\": category->{...},  // Expand the category reference, including all its fields\n      \"instructor\": instructor->{...},  // Expand the instructor reference, including all its fields\n      \"modules\": modules[]-> {  // Expand the array of module references\n        ...,  // Include all module fields\n        \"lessons\": lessons[]-> {...}  // For each module, expand its array of lesson references\n      }\n    }": GetCourseByIdQueryResult;
     "*[_type == \"course\" && slug.current == $slug][0] {\n      ...,\n      \"category\": category->{...},\n      \"instructor\": instructor->{...},\n      \"modules\": modules[]-> {\n        ...,\n        \"lessons\": lessons[]-> {...}\n      }\n    }": GetCourseBySlugQueryResult;
     "*[_type == \"course\"] {\n    ...,\n    \"slug\": slug.current,\n    \"category\": category->{...},\n    \"instructor\": instructor->{...}\n  }": GetCoursesQueryResult;
@@ -1437,7 +1449,5 @@ declare module "@sanity/client" {
     "*[_type == \"lessonCompletion\" && student._ref == $studentId && lesson._ref == $lessonId][0] {\n    ...\n  }": CompletionStatusQueryResult;
     "*[_type == \"student\" && clerkId == $clerkId][0] {\n    \"enrolledCourses\": *[_type == \"enrollment\" && student._ref == ^._id] {\n      ...,\n      \"course\": course-> {\n        ...,\n        \"slug\": slug.current,\n        \"category\": category->{...},\n        \"instructor\": instructor->{...},\n        \"modules\": modules[]->{\n          ...,\n          \"lessons\": lessons[]->\n        }\n      }\n    }\n  }": GetEnrolledCoursesQueryResult;
     "*[_type == \"student\" && clerkId == $clerkId][0] {\n      _id,\n      _type,\n      _createdAt,\n      _updatedAt,\n      _rev,\n      firstName,\n      lastName,\n      email,\n      clerkId,\n      imageUrl,\n      organization,\n      role,\n      invitedDate,\n      acceptedDate\n    }": GetStudentByClerkIdQueryResult;
-    "*[_type == \"student\" && clerkId == $clerkId][0]._id": StudentQueryResult;
-    "*[_type == \"enrollment\" && student._ref == $studentId && course._ref == $courseId][0]": EnrollmentQueryResult;
   }
 }
