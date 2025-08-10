@@ -2,11 +2,37 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { Webhook } from "svix";
 import { WebhookEvent } from "@clerk/nextjs/server";
-import { createStudentIfNotExists } from "@/sanity/lib/student/createStudentIfNotExists";
+import { createStudentIfNotExistsServer } from "@/sanity/lib/student/createStudentIfNotExists";
 import { client } from "@/sanity/lib/adminClient";
 import groq from "groq";
 
 const webhookSecret = process.env.CLERK_WEBHOOK_SECRET!;
+
+// Define types for Clerk API responses
+interface ClerkEmailAddress {
+  id: string;
+  email_address: string;
+  verification?: {
+    status: string;
+    strategy: string;
+  };
+  linked_to?: Array<{
+    type: string;
+    id: string;
+  }>;
+}
+
+interface ClerkUserData {
+  id: string;
+  email_addresses: ClerkEmailAddress[];
+  primary_email_address_id: string;
+  first_name: string | null;
+  last_name: string | null;
+  image_url: string | null;
+  username?: string | null;
+  created_at?: number;
+  updated_at?: number;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -69,11 +95,12 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ success: true }); // Continue processing other webhooks
         }
 
-        const userData = await response.json();
+        const userData: ClerkUserData = await response.json();
 
-        // Get primary email
+        // Get primary email with proper typing
         const primaryEmail = userData.email_addresses?.find(
-          (email: any) => email.id === userData.primary_email_address_id
+          (email: ClerkEmailAddress) =>
+            email.id === userData.primary_email_address_id
         )?.email_address;
 
         if (!primaryEmail) {
@@ -82,7 +109,7 @@ export async function POST(req: NextRequest) {
         }
 
         // Create or update the student
-        await createStudentIfNotExists({
+        await createStudentIfNotExistsServer({
           clerkId: userId,
           email: primaryEmail,
           firstName: userData.first_name || public_user_data.first_name || "",
@@ -140,7 +167,7 @@ export async function POST(req: NextRequest) {
       );
 
       if (primaryEmail) {
-        await createStudentIfNotExists({
+        await createStudentIfNotExistsServer({
           clerkId: id,
           email: primaryEmail.email_address,
           firstName: first_name || "",
@@ -162,14 +189,14 @@ export async function POST(req: NextRequest) {
       });
 
       if (response.ok) {
-        const userData = await response.json();
+        const userData: ClerkUserData = await response.json();
         const primaryEmail = userData.email_addresses.find(
-          (email: { id: string; email_address: string }) =>
+          (email: ClerkEmailAddress) =>
             email.id === userData.primary_email_address_id
         );
 
         if (primaryEmail) {
-          await createStudentIfNotExists({
+          await createStudentIfNotExistsServer({
             clerkId: userId,
             email: primaryEmail.email_address,
             firstName: userData.first_name || "",

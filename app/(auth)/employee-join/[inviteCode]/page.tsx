@@ -65,53 +65,54 @@ export default function EmployeeJoinPage({
   // Validate invitation ticket from Clerk
   useEffect(() => {
     if (isSignUpLoaded && inviteCode) {
+      // Move the validateInvitation function inside useEffect to fix the dependency warning
+      const validateInvitation = async () => {
+        try {
+          setIsValidating(true);
+          setError(null);
+
+          console.log("Validating invitation with code:", inviteCode);
+
+          // Call API to validate the invitation ticket
+          const response = await fetch(`/api/validate-invitation`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              invitationTicket: inviteCode,
+            }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            console.error("Validation API error:", errorData);
+            throw new Error(errorData.error || "Invalid invitation");
+          }
+
+          const invitationData = await response.json();
+          console.log("Invitation data received:", invitationData);
+          setInvitation(invitationData);
+
+          // Pre-fill email if provided
+          if (invitationData.emailAddress) {
+            setEmail(invitationData.emailAddress);
+          }
+        } catch (err) {
+          console.error("Error validating invitation:", err);
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Invalid or expired invitation link"
+          );
+        } finally {
+          setIsValidating(false);
+        }
+      };
+
       validateInvitation();
     }
   }, [isSignUpLoaded, inviteCode]);
-
-  const validateInvitation = async () => {
-    try {
-      setIsValidating(true);
-      setError(null);
-
-      console.log("Validating invitation with code:", inviteCode);
-
-      // Call API to validate the invitation ticket
-      const response = await fetch(`/api/validate-invitation`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          invitationTicket: inviteCode,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error("Validation API error:", errorData);
-        throw new Error(errorData.error || "Invalid invitation");
-      }
-
-      const invitationData = await response.json();
-      console.log("Invitation data received:", invitationData);
-      setInvitation(invitationData);
-
-      // Pre-fill email if provided
-      if (invitationData.emailAddress) {
-        setEmail(invitationData.emailAddress);
-      }
-    } catch (err) {
-      console.error("Error validating invitation:", err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Invalid or expired invitation link"
-      );
-    } finally {
-      setIsValidating(false);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

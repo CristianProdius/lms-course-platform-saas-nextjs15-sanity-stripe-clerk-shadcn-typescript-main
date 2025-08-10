@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
 import { client } from "@/sanity/lib/adminClient";
-import { createStudentIfNotExists } from "@/sanity/lib/student/createStudentIfNotExists";
+import { createStudentIfNotExistsServer } from "@/sanity/lib/student/createStudentIfNotExists";
 
 export async function POST(req: NextRequest) {
   try {
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Ensure user exists in Sanity first
-    await createStudentIfNotExists({
+    await createStudentIfNotExistsServer({
       clerkId: user.id,
       email: user.primaryEmailAddress?.emailAddress || "",
       firstName: user.firstName || "",

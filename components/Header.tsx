@@ -8,7 +8,7 @@ import {
   UserButton,
   useOrganization,
 } from "@clerk/nextjs";
-import { Menu, X, BookOpen, Shield } from "lucide-react";
+import { Menu, X, BookOpen, Shield, LayoutDashboard } from "lucide-react";
 import Link from "next/link";
 import { Button } from "./ui/button";
 import Image from "next/image";
@@ -51,12 +51,24 @@ export default function Header() {
               {/* Course Link */}
               <Link
                 prefetch={false}
-                href="/courses/precuity-ai"
+                href="/courses"
                 className="flex space-x-2 items-center text-sm font-medium text-muted-foreground hover:text-foreground transition-colors md:border md:border-border md:rounded-md md:px-4 md:py-2"
               >
                 <BookOpen className="h-4 w-4" />
-                <span>Course</span>
+                <span>Courses</span>
               </Link>
+
+              {/* Dashboard Link - Show for all signed in users */}
+              <SignedIn>
+                <Link
+                  prefetch={false}
+                  href="/dashboard"
+                  className="flex space-x-2 items-center text-sm font-medium text-muted-foreground hover:text-foreground transition-colors md:border md:border-border md:rounded-md md:px-4 md:py-2"
+                >
+                  <LayoutDashboard className="h-4 w-4" />
+                  <span>Dashboard</span>
+                </Link>
+              </SignedIn>
 
               {/* Organization Admin Link - Only show for admins */}
               <SignedIn>
@@ -67,7 +79,7 @@ export default function Header() {
                     className="flex space-x-2 items-center text-sm font-medium text-muted-foreground hover:text-foreground transition-colors md:border md:border-border md:rounded-md md:px-4 md:py-2"
                   >
                     <Shield className="h-4 w-4" />
-                    <span>Organization Admin</span>
+                    <span>Admin Panel</span>
                   </Link>
                 )}
               </SignedIn>
@@ -110,25 +122,38 @@ export default function Header() {
               {/* Course Link */}
               <Link
                 prefetch={false}
-                href="/courses/precuity-ai"
+                href="/courses"
                 onClick={closeMenu}
                 className="flex items-center space-x-2 px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
               >
                 <BookOpen className="h-4 w-4" />
-                <span>Course</span>
+                <span>Courses</span>
               </Link>
+
+              {/* Dashboard Link - Show for all signed in users */}
+              <SignedIn>
+                <Link
+                  prefetch={false}
+                  href="/dashboard"
+                  onClick={closeMenu}
+                  className="flex items-center space-x-2 px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
+                >
+                  <LayoutDashboard className="h-4 w-4" />
+                  <span>Dashboard</span>
+                </Link>
+              </SignedIn>
 
               {/* Organization Admin Link - Only show for admins */}
               <SignedIn>
                 {isOrgAdmin && (
                   <Link
                     prefetch={false}
-                    href="/dashboard/organization/invite"
+                    href="/dashboard/admin"
                     onClick={closeMenu}
                     className="flex items-center space-x-2 px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
                   >
                     <Shield className="h-4 w-4" />
-                    <span>Organization Admin</span>
+                    <span>Admin Panel</span>
                   </Link>
                 )}
               </SignedIn>

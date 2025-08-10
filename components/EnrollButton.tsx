@@ -162,7 +162,7 @@ function EnrollButton({
     return (
       <button
         className="w-full rounded-lg px-6 py-3 font-medium bg-green-600 text-white"
-        onClick={() => router.push(`/courses/${courseId}/lessons`)}
+        onClick={() => router.push(`/dashboard/courses/${courseId}`)}
       >
         {hasOrgAccess ? "Access Course (Organization)" : "Continue Learning"}
       </button>

@@ -1,94 +1,214 @@
-import { redirect } from "next/navigation";
 import { currentUser } from "@clerk/nextjs/server";
-import { getEnrolledCourses } from "@/sanity/lib/student/getEnrolledCourses";
-import { getCourseProgress } from "@/sanity/lib/lessons/getCourseProgress";
-import { getStudentByClerkId } from "@/sanity/lib/student/getStudentByClerkId";
+import { redirect } from "next/navigation";
 import Link from "next/link";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+
 import {
-  BookOpen,
-  Clock,
   Trophy,
-  TrendingUp,
-  Users,
-  ArrowRight,
-  Award,
+  Clock,
   Target,
-  Zap,
+  ArrowRight,
   GraduationCap,
+  BookOpen,
   Play,
+  Award,
+  Zap,
+  Building2,
   Shield,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
-
+import { getCourseProgress } from "@/sanity/lib/lessons/getCourseProgress";
+import { getStudentByClerkId } from "@/sanity/lib/student/getStudentByClerkId";
+import { client } from "@/sanity/lib/adminClient";
+import groq from "groq";
 import Image from "next/image";
-import { urlFor } from "@/sanity/lib/image";
 
-interface Module {
-  lessons?: Array<{ _id: string; title?: string }>;
+// Type definitions
+interface Lesson {
+  _id: string;
+  title: string;
+  slug?: string;
 }
 
-interface SanityImage {
-  _type: "image";
-  asset: {
-    _ref: string;
-    _type: "reference";
-  };
-  crop?: object;
-  hotspot?: object;
+interface Module {
+  _id: string;
+  title: string;
+  lessons?: Lesson[];
 }
 
 interface Course {
   _id: string;
-  title?: string;
-  image?: SanityImage;
+  title: string;
+  description: string;
+  thumbnail?: string;
+  price: number;
   modules?: Module[];
 }
 
-interface CourseWithProgress {
+interface Enrollment {
+  _id: string;
   course: Course;
+}
+
+interface CourseWithAccess {
+  course: Course;
+  accessType: "individual" | "organization";
+}
+
+interface CourseWithProgress {
+  course: {
+    _id: string;
+    title: string;
+    description: string;
+    thumbnail?: string;
+    price: number;
+  };
   progress: number;
-  completedLessons: number;
   totalLessons: number;
+  completedLessons: number;
   lastActivity?: Date;
+  accessType: "individual" | "organization";
+}
+
+interface CompletedLesson {
+  completedAt?: string;
+  lesson?: {
+    _id: string;
+  };
 }
 
 export default async function DashboardPage() {
   const user = await currentUser();
 
   if (!user?.id) {
-    return redirect("/sign-in");
+    return redirect("/");
   }
 
-  // Get student data
-  const studentData = await getStudentByClerkId(user.id);
-  const student = studentData?.data;
+  // Get student data with organization
+  const studentResult = await getStudentByClerkId(user.id);
+  const student = studentResult?.data;
+  if (!student) {
+    return redirect("/");
+  }
 
-  // Get enrolled courses
-  const enrolledCourses = await getEnrolledCourses(user.id);
+  // Get all accessible courses (individual enrollments + organization courses)
+  let coursesWithProgress: CourseWithProgress[] = [];
 
-  // Get progress for each course
-  const coursesWithProgress: CourseWithProgress[] = await Promise.all(
-    enrolledCourses.map(async (enrollment) => {
-      const { course } = enrollment;
+  // 1. Get individual enrollments
+  const individualEnrollmentsQuery = groq`*[_type == "enrollment" && student._ref == $studentId] {
+    _id,
+    course->{
+      _id,
+      title,
+      description,
+      thumbnail,
+      price,
+      "modules": modules[]->{
+        _id,
+        title,
+        "lessons": lessons[]->{
+          _id,
+          title,
+          slug
+        }
+      }
+    }
+  }`;
+
+  const individualEnrollments = await client.fetch(individualEnrollmentsQuery, {
+    studentId: student._id,
+  });
+
+  // 2. Get organization courses if user belongs to an organization
+  let organizationCourses: Course[] = [];
+  if (student?.organization) {
+    // First check if the organization has an active subscription
+    const orgSubscriptionQuery = groq`*[_type == "organization" && _id == $orgId][0] {
+      subscriptionStatus,
+      stripeCustomerId
+    }`;
+
+    const orgData = await client.fetch(orgSubscriptionQuery, {
+      orgId: student.organization._ref,
+    });
+
+    // Only show courses if organization has active paid subscription
+    if (orgData?.subscriptionStatus === "active" && orgData?.stripeCustomerId) {
+      const allCoursesQuery = groq`*[_type == "course" && !(_id in path("drafts.**"))] {
+        _id,
+        title,
+        description,
+        thumbnail,
+        price,
+        "modules": modules[]->{
+          _id,
+          title,
+          "lessons": lessons[]->{
+            _id,
+            title,
+            slug
+          }
+        }
+      }`;
+
+      organizationCourses = await client.fetch(allCoursesQuery);
+    }
+  }
+
+  // Combine and process all courses
+  const allCourses = [
+    ...individualEnrollments.map((e: Enrollment) => ({
+      course: e.course,
+      accessType: "individual" as const,
+    })),
+    ...organizationCourses.map((course: Course) => ({
+      course,
+      accessType: "organization" as const,
+    })),
+  ];
+
+  // Remove duplicates (prefer individual access over organization)
+  const uniqueCourses = allCourses.reduce((acc: CourseWithAccess[], curr) => {
+    const existing = acc.find((item) => item.course._id === curr.course._id);
+    if (
+      !existing ||
+      (existing.accessType === "organization" &&
+        curr.accessType === "individual")
+    ) {
+      return [
+        ...acc.filter((item) => item.course._id !== curr.course._id),
+        curr,
+      ];
+    }
+    return acc;
+  }, []);
+
+  // Calculate progress for each course
+  coursesWithProgress = await Promise.all(
+    uniqueCourses.map(async ({ course, accessType }: CourseWithAccess) => {
       if (!course) return null;
-      const progress = await getCourseProgress(user.id, course._id);
 
+      const progress = await getCourseProgress(user.id, course._id);
       const totalLessons =
         course.modules?.reduce(
-          (acc: number, module) => acc + (module.lessons?.length || 0),
+          (acc: number, module: Module) => acc + (module.lessons?.length || 0),
           0
         ) || 0;
 
+      const completedLessons = progress.completedLessons as CompletedLesson[];
+      const firstCompletedLesson =
+        completedLessons.length > 0 ? completedLessons[0] : null;
+
       return {
         course,
+        accessType,
         progress: progress.courseProgress,
-        completedLessons: progress.completedLessons.length,
         totalLessons,
-        lastActivity: progress.completedLessons[0]?.completedAt
-          ? new Date(progress.completedLessons[0].completedAt)
+        completedLessons: completedLessons.length,
+        lastActivity: firstCompletedLesson?.completedAt
+          ? new Date(firstCompletedLesson.completedAt)
           : undefined,
       };
     })
@@ -126,6 +246,15 @@ export default async function DashboardPage() {
   const isOrgUser = student?.organization;
   const userRole = student?.role;
 
+  // Get organization name if user is part of one
+  let organizationName = null;
+  if (student?.organization) {
+    const orgQuery = groq`*[_type == "organization" && _id == $orgId][0].name`;
+    organizationName = await client.fetch(orgQuery, {
+      orgId: student.organization._ref,
+    });
+  }
+
   // Get current time for greeting
   const currentHour = new Date().getHours();
   const greeting =
@@ -135,7 +264,7 @@ export default async function DashboardPage() {
       ? "Good afternoon"
       : "Good evening";
 
-  // Calculate learning streak (simplified - you might want to track this in Sanity)
+  // Calculate learning streak
   const today = new Date().setHours(0, 0, 0, 0);
   const hasActivityToday = coursesWithProgress.some(
     (course) =>
@@ -156,70 +285,61 @@ export default async function DashboardPage() {
               <p className="text-gray-600 dark:text-gray-400 mt-2">
                 {totalCourses === 0
                   ? "Start your AI learning journey today"
-                  : `You're making great progress! Keep up the momentum.`}
+                  : `You're making great progress! Keep it up.`}
               </p>
             </div>
-            {isOrgUser && userRole === "admin" && (
-              <Button
-                asChild
-                className="bg-gradient-to-r from-[#FF4A1C] to-[#2A4666] hover:from-[#FF4A1C]/90 hover:to-[#2A4666]/90"
-              >
-                <Link href="/dashboard/admin">
-                  <Shield className="h-4 w-4 mr-2" />
-                  Admin Dashboard
-                </Link>
-              </Button>
+            {isOrgUser && organizationName && (
+              <Badge variant="outline" className="h-fit">
+                <Building2 className="h-3 w-3 mr-1" />
+                {organizationName} {userRole === "admin" ? "Admin" : "Employee"}
+              </Badge>
             )}
           </div>
         </div>
 
-        {/* Welcome Banner for New Users */}
-        {totalCourses === 0 && (
-          <Card className="mb-8 overflow-hidden bg-gradient-to-br from-[#FF4A1C]/10 via-[#2A4666]/10 to-[#FF4A1C]/10 border-0">
-            <CardContent className="p-8">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                    Welcome to Precuity AI! 🎉
-                  </h2>
-                  <p className="text-gray-600 dark:text-gray-400 mb-4">
-                    Ready to transform your skills in just 5 days? Let&apos;s
-                    get started with your first course.
-                  </p>
-                  <Button
-                    asChild
-                    size="lg"
-                    className="bg-gradient-to-r from-[#FF4A1C] to-[#2A4666] hover:from-[#FF4A1C]/90 hover:to-[#2A4666]/90"
-                  >
-                    <Link href="/">
-                      <Zap className="h-5 w-5 mr-2" />
-                      Browse Courses
-                    </Link>
-                  </Button>
-                </div>
-                <div className="hidden lg:block">
-                  <GraduationCap className="h-32 w-32 text-[#2A4666]/20" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Enrolled Courses
+                    Total Courses
                   </p>
                   <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">
                     {totalCourses}
                   </p>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {coursesWithProgress.filter(
+                      (c) => c.accessType === "organization"
+                    ).length > 0 &&
+                      `${
+                        coursesWithProgress.filter(
+                          (c) => c.accessType === "organization"
+                        ).length
+                      } via organization`}
+                  </p>
                 </div>
-                <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-600/20 flex items-center justify-center">
-                  <BookOpen className="h-6 w-6 text-blue-600" />
+                <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-500/20 to-purple-600/20 flex items-center justify-center">
+                  <BookOpen className="h-6 w-6 text-purple-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                    Overall Progress
+                  </p>
+                  <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+                    {overallProgress}%
+                  </p>
+                </div>
+                <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#2A4666]/20 to-blue-600/20 flex items-center justify-center">
+                  <Target className="h-6 w-6 text-[#2A4666]" />
                 </div>
               </div>
             </CardContent>
@@ -237,25 +357,7 @@ export default async function DashboardPage() {
                   </p>
                 </div>
                 <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-green-500/20 to-green-600/20 flex items-center justify-center">
-                  <Trophy className="h-6 w-6 text-green-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Overall Progress
-                  </p>
-                  <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">
-                    {overallProgress}%
-                  </p>
-                </div>
-                <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-500/20 to-purple-600/20 flex items-center justify-center">
-                  <TrendingUp className="h-6 w-6 text-purple-600" />
+                  <GraduationCap className="h-6 w-6 text-green-600" />
                 </div>
               </div>
             </CardContent>
@@ -299,84 +401,104 @@ export default async function DashboardPage() {
             </div>
 
             {recentCourses.length === 0 ? (
-              <Card className="h-[400px] flex items-center justify-center">
-                <CardContent className="text-center">
-                  <BookOpen className="h-16 w-16 text-gray-300 dark:text-gray-700 mx-auto mb-4" />
-                  <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                    No courses yet
+              <Card className="p-8 text-center">
+                <div className="flex flex-col items-center">
+                  <BookOpen className="h-12 w-12 text-gray-400 mb-4" />
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                    {isOrgUser && organizationName
+                      ? "Access Your Organization's Courses"
+                      : "No courses started yet"}
                   </h3>
                   <p className="text-gray-600 dark:text-gray-400 mb-6">
-                    Start your AI journey by enrolling in a course
+                    {isOrgUser && organizationName
+                      ? `As a ${
+                          userRole === "admin" ? "admin" : "member"
+                        } of ${organizationName}, you have access to all courses.`
+                      : "Browse our AI courses and start your learning journey today!"}
                   </p>
-                  <Button asChild>
-                    <Link href="/">
+                  <Button
+                    asChild
+                    className="bg-gradient-to-r from-[#FF4A1C] to-[#2A4666] hover:from-[#FF4A1C]/90 hover:to-[#2A4666]/90"
+                  >
+                    <Link href="/courses/precuity-ai">
+                      <Play className="h-4 w-4 mr-2" />
                       Browse Courses
-                      <ArrowRight className="h-4 w-4 ml-2" />
                     </Link>
                   </Button>
-                </CardContent>
+                </div>
               </Card>
             ) : (
-              <div className="grid gap-6">
+              <div className="space-y-4">
                 {recentCourses.map((courseData) => (
                   <Card
                     key={courseData.course._id}
-                    className="overflow-hidden hover:shadow-lg transition-shadow"
+                    className="overflow-hidden hover:shadow-lg transition-shadow duration-300"
                   >
                     <CardContent className="p-0">
                       <div className="flex">
-                        {courseData.course.image && (
+                        {courseData.course.thumbnail && (
                           <div className="relative w-48 h-32">
                             <Image
-                              src={urlFor(courseData.course.image).url()}
-                              alt={courseData.course.title || "Course image"}
+                              src={courseData.course.thumbnail}
+                              alt={courseData.course.title}
                               fill
                               className="object-cover"
                             />
                           </div>
                         )}
                         <div className="flex-1 p-6">
-                          <div className="flex items-start justify-between mb-4">
-                            <div>
-                              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                                {courseData.course.title || "Untitled Course"}
-                              </h3>
-                              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                                {courseData.completedLessons} of{" "}
-                                {courseData.totalLessons} lessons completed
-                              </p>
-                            </div>
-                            <Badge
-                              variant={
-                                courseData.progress === 100
-                                  ? "default"
-                                  : "secondary"
-                              }
-                            >
-                              {courseData.progress === 100 ? (
-                                <>
-                                  <Trophy className="h-3 w-3 mr-1" />
-                                  Complete
-                                </>
-                              ) : (
-                                <>
-                                  <Clock className="h-3 w-3 mr-1" />
-                                  In Progress
-                                </>
+                          <div className="flex items-start justify-between mb-2">
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                              {courseData.course.title}
+                            </h3>
+                            <div className="flex items-center gap-2">
+                              {courseData.accessType === "organization" && (
+                                <Badge
+                                  variant="secondary"
+                                  className="bg-blue-100 text-blue-700"
+                                >
+                                  <Building2 className="h-3 w-3 mr-1" />
+                                  Organization
+                                </Badge>
                               )}
-                            </Badge>
+                              <Badge
+                                variant={
+                                  courseData.progress === 100
+                                    ? "default"
+                                    : "secondary"
+                                }
+                              >
+                                {courseData.progress === 100 ? (
+                                  <>
+                                    <Trophy className="h-3 w-3 mr-1" />
+                                    Complete
+                                  </>
+                                ) : (
+                                  <>
+                                    <Clock className="h-3 w-3 mr-1" />
+                                    In Progress
+                                  </>
+                                )}
+                              </Badge>
+                            </div>
                           </div>
                           <Progress
                             value={courseData.progress}
                             className="h-2 mb-4"
                           />
                           <div className="flex items-center justify-between">
-                            {courseData.lastActivity && (
-                              <p className="text-sm text-gray-500">
-                                Last activity:{" "}
-                                {courseData.lastActivity.toLocaleDateString()}
-                              </p>
-                            )}
+                            <div className="flex items-center gap-4 text-sm text-gray-500">
+                              <span>
+                                {courseData.completedLessons}/
+                                {courseData.totalLessons} lessons
+                              </span>
+                              {courseData.lastActivity && (
+                                <span>
+                                  Last activity:{" "}
+                                  {courseData.lastActivity.toLocaleDateString()}
+                                </span>
+                              )}
+                            </div>
                             <Button asChild>
                               <Link
                                 href={`/dashboard/courses/${courseData.course._id}`}
@@ -416,68 +538,8 @@ export default async function DashboardPage() {
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                     {hasActivityToday
                       ? "Great job! Keep it up!"
-                      : "Complete a lesson to start your streak"}
+                      : "Complete a lesson to start your streak!"}
                   </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Achievements */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Award className="h-5 w-5 text-[#2A4666]" />
-                  Recent Achievements
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {completedCourses > 0 && (
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-500/20 to-green-600/20 flex items-center justify-center">
-                        <Trophy className="h-5 w-5 text-green-600" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-gray-100">
-                          Course Champion
-                        </p>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                          Completed {completedCourses} course
-                          {completedCourses > 1 ? "s" : ""}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                  {totalCompletedLessons >= 10 && (
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500/20 to-blue-600/20 flex items-center justify-center">
-                        <Target className="h-5 w-5 text-blue-600" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-gray-100">
-                          Lesson Master
-                        </p>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                          Completed {totalCompletedLessons} lessons
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                  {totalCourses >= 3 && (
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500/20 to-purple-600/20 flex items-center justify-center">
-                        <BookOpen className="h-5 w-5 text-purple-600" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-gray-100">
-                          Knowledge Seeker
-                        </p>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                          Enrolled in {totalCourses} courses
-                        </p>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </CardContent>
             </Card>
@@ -489,34 +551,34 @@ export default async function DashboardPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <Button
+                  asChild
                   variant="outline"
                   className="w-full justify-start"
-                  asChild
                 >
-                  <Link href="/">
+                  <Link href="/courses">
                     <BookOpen className="h-4 w-4 mr-2" />
-                    Browse New Courses
+                    Browse All Courses
                   </Link>
                 </Button>
                 <Button
+                  asChild
                   variant="outline"
                   className="w-full justify-start"
-                  asChild
                 >
                   <Link href="/my-courses">
-                    <GraduationCap className="h-4 w-4 mr-2" />
-                    My Courses
+                    <Trophy className="h-4 w-4 mr-2" />
+                    View Certificates
                   </Link>
                 </Button>
-                {isOrgUser && (
+                {userRole === "admin" && (
                   <Button
+                    asChild
                     variant="outline"
                     className="w-full justify-start"
-                    asChild
                   >
-                    <Link href="/dashboard/team">
-                      <Users className="h-4 w-4 mr-2" />
-                      Team Progress
+                    <Link href="/dashboard/admin">
+                      <Shield className="h-4 w-4 mr-2" />
+                      Admin Dashboard
                     </Link>
                   </Button>
                 )}
@@ -524,61 +586,6 @@ export default async function DashboardPage() {
             </Card>
           </div>
         </div>
-
-        {/* Recommended Next Steps */}
-        {totalCourses > 0 && overallProgress < 100 && (
-          <Card className="mt-8">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Target className="h-5 w-5 text-[#FF4A1C]" />
-                Recommended Next Steps
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
-                    <span className="text-sm font-bold text-blue-600">1</span>
-                  </div>
-                  <div>
-                    <h4 className="font-medium text-gray-900 dark:text-gray-100">
-                      Complete Current Lessons
-                    </h4>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                      Finish your in-progress lessons to maintain momentum
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
-                    <span className="text-sm font-bold text-green-600">2</span>
-                  </div>
-                  <div>
-                    <h4 className="font-medium text-gray-900 dark:text-gray-100">
-                      Practice Daily
-                    </h4>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                      Spend 15 minutes daily to master AI tools effectively
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center flex-shrink-0">
-                    <span className="text-sm font-bold text-purple-600">3</span>
-                  </div>
-                  <div>
-                    <h4 className="font-medium text-gray-900 dark:text-gray-100">
-                      Apply Your Knowledge
-                    </h4>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                      Use AI tools in your daily work for real results
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </div>
     </div>
   );

@@ -5,7 +5,7 @@ import baseUrl from "@/lib/baseUrl";
 
 import { urlFor } from "@/sanity/lib/image";
 import getCourseById from "@/sanity/lib/courses/getCourseById";
-import { createStudentIfNotExists } from "@/sanity/lib/student/createStudentIfNotExists";
+import { createStudentIfNotExistsServer } from "@/sanity/lib/student/createStudentIfNotExists";
 import { clerkClient } from "@clerk/nextjs/server";
 import { createEnrollment } from "@/sanity/lib/student/createEnrollment";
 
@@ -26,7 +26,7 @@ export async function createStripeCheckout(courseId: string, userId: string) {
     }
 
     // mid step - create a user in sanity if it doesn't exist
-    const user = await createStudentIfNotExists({
+    const user = await createStudentIfNotExistsServer({
       clerkId: userId,
       email: email || "",
       firstName: firstName || email,

@@ -1,25 +1,11 @@
 import { isEnrolledInCourse } from "@/sanity/lib/student/isEnrolledInCourse";
 import { getStudentByClerkId } from "@/sanity/lib/student/getStudentByClerkId";
 import getCourseById from "@/sanity/lib/courses/getCourseById";
-import { clerkClient } from "@clerk/nextjs/server";
+
 import { client } from "@/sanity/lib/adminClient";
 import groq from "groq";
 
-// Import types from Sanity
-import type { User } from "@clerk/nextjs/server";
-
-// Extend the Clerk User type to include organization memberships
-interface ClerkUserWithOrganizations extends User {
-  organizationMemberships?: Array<{
-    organization: {
-      id: string;
-      name: string;
-      slug: string;
-    };
-    role: string;
-  }>;
-}
-
+// Define types for the data structures we're working with
 interface AuthResult {
   isAuthorized: boolean;
   redirect?: string;
@@ -34,15 +20,6 @@ interface CourseAccessResult {
   reason?: string;
 }
 
-interface Organization {
-  _id: string;
-  name: string;
-  subscriptionStatus: string;
-  employeeLimit: number;
-  stripeCustomerId?: string;
-  clerkOrganizationId: string;
-}
-
 interface Course {
   _id: string;
   title: string;
@@ -52,12 +29,41 @@ interface Course {
   accessType: string;
   isFree: boolean;
   organizationName?: string;
+  slug?: {
+    current: string;
+  };
+  category?: {
+    _id: string;
+    title: string;
+    [key: string]: unknown;
+  };
+  instructor?: {
+    _id: string;
+    name: string;
+    [key: string]: unknown;
+  };
 }
 
-interface Enrollment {
-  course: Course;
-  enrolledAt: string;
-  completedAt?: string;
+interface OrganizationCourse {
+  course: Course | null;
+}
+
+interface EnrollmentWithCourse {
+  course: Course | null;
+}
+
+interface Student {
+  _id: string;
+  organization?: {
+    _ref: string;
+  };
+  [key: string]: unknown;
+}
+
+interface Organization {
+  _id: string;
+  name: string;
+  [key: string]: unknown;
 }
 
 export async function checkCourseAccess(
@@ -79,9 +85,23 @@ export async function checkCourseAccess(
     };
   }
 
+  // Check both individual enrollment AND organization access
   const isEnrolled = await isEnrolledInCourse(clerkId, courseId);
-  const course = await getCourseById(courseId);
+
+  // If not individually enrolled, check organization access
   if (!isEnrolled) {
+    const orgAccess = await checkOrganizationCourseAccess(clerkId, courseId);
+
+    if (orgAccess.hasAccess && orgAccess.accessType === "organization") {
+      // User has organization access!
+      return {
+        isAuthorized: true,
+        studentId: student.data._id,
+      };
+    }
+
+    // No access at all, redirect to course page
+    const course = await getCourseById(courseId);
     return {
       isAuthorized: false,
       redirect: `/courses/${course?.slug?.current}`,
@@ -108,7 +128,7 @@ export async function checkOrganizationCourseAccess(
   try {
     // Get student data
     const studentData = await getStudentByClerkId(userId);
-    const student = studentData?.data;
+    const student = studentData?.data as Student | undefined;
 
     if (!student) {
       return {
@@ -140,7 +160,7 @@ export async function checkOrganizationCourseAccess(
       });
 
       if (orgCourse) {
-        const org = await client.fetch(
+        const org = await client.fetch<Organization>(
           groq`*[_type == "organization" && _id == $organizationId][0]`,
           { organizationId: student.organization._ref }
         );
@@ -182,110 +202,105 @@ export async function hasAnyCourseAccess(
 
 /**
  * Get all accessible courses for a user (both org and individual)
- * Only shows courses for organizations with PAID subscriptions
+ * Shows courses the organization has purchased or user has individually enrolled in
  */
 export async function getUserAccessibleCourses(userId: string) {
   try {
-    const clerkUser = (await (
-      await clerkClient()
-    ).users.getUser(userId)) as ClerkUserWithOrganizations;
-    const organizationMemberships = clerkUser.organizationMemberships || [];
+    // Get student data
+    const studentData = await getStudentByClerkId(userId);
+    const student = studentData?.data as Student | undefined;
 
-    // Check if user is an employee with organization access
-    if (organizationMemberships.length > 0) {
-      const orgIds = organizationMemberships.map(
-        (membership) => membership.organization.id
-      );
-
-      // Check for active PAID subscription only
-      const orgWithActiveSubQuery = groq`*[_type == "organization" && 
-        clerkOrganizationId in $orgIds && 
-        subscriptionStatus == "active" &&
-        stripeCustomerId != null
-      ][0]`;
-
-      const activeOrg = await client.fetch(orgWithActiveSubQuery, { orgIds });
-
-      if (activeOrg) {
-        // Verify there's an actual subscription record
-        const subscriptionQuery = groq`*[_type == "subscription" && 
-          organization._ref == $orgId && 
-          status == "active"
-        ][0]`;
-
-        const subscription = await client.fetch(subscriptionQuery, {
-          orgId: activeOrg._id,
-        });
-
-        if (subscription) {
-          // EMPLOYEE HAS ACCESS TO ALL COURSES
-          const allCoursesQuery = groq`*[_type == "course" && !(_id in path("drafts.**"))] {
-            _id,
-            title,
-            description,
-            thumbnail,
-            price,
-            "accessType": "organization",
-            "isFree": true,
-            "organizationName": $orgName
-          }`;
-
-          const courses = await client.fetch(allCoursesQuery, {
-            orgName: activeOrg.name,
-          });
-
-          return {
-            hasOrganizationAccess: true,
-            organizationName: activeOrg.name,
-            courses: courses,
-          };
-        }
-      }
-    }
-
-    // For B2C users, get their individually purchased courses
-    const userQuery = groq`*[_type == "student" && clerkId == $userId][0]._id`;
-    const sanityUserId = await client.fetch(userQuery, { userId });
-
-    if (sanityUserId) {
-      const individualCoursesQuery = groq`*[_type == "enrollment" && 
-        user._ref == $sanityUserId
-      ] {
-        "course": course-> {
-          _id,
-          title,
-          description,
-          thumbnail,
-          price,
-          "accessType": "individual",
-          "isFree": false
-        },
-        enrolledAt,
-        completedAt
-      }`;
-
-      const enrollments: Enrollment[] = await client.fetch(
-        individualCoursesQuery,
-        {
-          sanityUserId,
-        }
-      );
-
+    if (!student) {
       return {
-        hasOrganizationAccess: false,
-        courses: enrollments.map((e: Enrollment) => e.course).filter(Boolean),
+        courses: [],
+        accessType: "none" as const,
       };
     }
 
+    let courses: Course[] = [];
+    let accessType: "organization" | "individual" | "both" | "none" = "none";
+    let organizationName: string | undefined;
+
+    // Check if user is part of an organization
+    if (student.organization) {
+      // Get all courses the organization has purchased
+      const orgCoursesQuery = groq`*[_type == "organizationCourse" && 
+        organization._ref == $organizationId && 
+        isActive == true
+      ] {
+        course->{
+          ...,
+          "slug": slug.current,
+          "category": category->{...},
+          "instructor": instructor->{...}
+        }
+      }`;
+
+      const orgCourses = await client.fetch<OrganizationCourse[]>(
+        orgCoursesQuery,
+        {
+          organizationId: student.organization._ref,
+        }
+      );
+
+      if (orgCourses && orgCourses.length > 0) {
+        courses = orgCourses
+          .map((oc: OrganizationCourse) => oc.course)
+          .filter((course): course is Course => course !== null);
+        accessType = "organization";
+
+        // Get organization name
+        const org = await client.fetch<string>(
+          groq`*[_type == "organization" && _id == $organizationId][0].name`,
+          { organizationId: student.organization._ref }
+        );
+        organizationName = org;
+      }
+    }
+
+    // Get individual enrollments
+    const enrollmentsQuery = groq`*[_type == "enrollment" && student._ref == $studentId] {
+      course->{
+        ...,
+        "slug": slug.current,
+        "category": category->{...},
+        "instructor": instructor->{...}
+      }
+    }`;
+
+    const enrollments = await client.fetch<EnrollmentWithCourse[]>(
+      enrollmentsQuery,
+      {
+        studentId: student._id,
+      }
+    );
+
+    const individualCourses: Course[] =
+      enrollments
+        ?.map((e: EnrollmentWithCourse) => e.course)
+        .filter((course): course is Course => course !== null) || [];
+
+    // Combine courses (remove duplicates)
+    if (individualCourses.length > 0) {
+      const courseIds = new Set(courses.map((c) => c._id));
+      const uniqueIndividualCourses = individualCourses.filter(
+        (c: Course) => !courseIds.has(c._id)
+      );
+      courses = [...courses, ...uniqueIndividualCourses];
+      accessType =
+        courses.length > individualCourses.length ? "both" : "individual";
+    }
+
     return {
-      hasOrganizationAccess: false,
-      courses: [],
+      courses,
+      accessType,
+      organizationName,
     };
   } catch (error) {
-    console.error("Error fetching accessible courses:", error);
+    console.error("Error getting user accessible courses:", error);
     return {
-      hasOrganizationAccess: false,
       courses: [],
+      accessType: "none" as const,
     };
   }
 }
