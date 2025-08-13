@@ -10,11 +10,8 @@ import CoursePurchaseOptions from "@/components/CoursePurchaseOptions";
 import {
   Clock,
   BookOpen,
-  Users,
-  Award,
   CheckCircle,
   Star,
-  Calendar,
   BarChart,
   Globe,
 } from "lucide-react";
@@ -54,7 +51,7 @@ export default async function CourseDetailsPage({
     if (student?.data?.organization) {
       // Handle both direct organization object and reference
       organizationId =
-        student.data.organization._ref || student.data.organization._id;
+        student.data.organization._ref || student.data.organization._type;
     }
   }
 
@@ -92,7 +89,7 @@ export default async function CourseDetailsPage({
               <div className="space-y-6">
                 {course.category && (
                   <span className="inline-block px-4 py-1 bg-[#B9FF66] text-[#191A23] text-sm font-semibold rounded-full">
-                    {course.category.title}
+                    {course.category.name}
                   </span>
                 )}
 
@@ -162,10 +159,10 @@ export default async function CourseDetailsPage({
                 {/* Instructor Info */}
                 {course.instructor && (
                   <div className="flex items-center gap-4 pt-4 border-t border-gray-700">
-                    {course.instructor.image && (
+                    {course.instructor.photo && (
                       <Image
-                        src={urlFor(course.instructor.image).url()}
-                        alt={course.instructor.name}
+                        src={urlFor(course.instructor.photo).url()}
+                        alt={course.instructor.name || "Instructor"}
                         width={48}
                         height={48}
                         className="rounded-full"
@@ -185,7 +182,7 @@ export default async function CourseDetailsPage({
                   <div className="rounded-2xl overflow-hidden shadow-2xl">
                     <Image
                       src={urlFor(course.image).url()}
-                      alt={course.title}
+                      alt={course.title || "Course Image"}
                       width={600}
                       height={400}
                       className="w-full h-auto object-cover"
@@ -299,7 +296,7 @@ export default async function CourseDetailsPage({
                 {/* Purchase Options Component - Now uses prices from Sanity! */}
                 <CoursePurchaseOptions
                   courseId={course._id}
-                  courseTitle={course.title}
+                  courseTitle={course.title || "Course Title"}
                   courseSlug={course.slug?.current || course._id}
                   hasAccess={hasAccess}
                   accessType={accessType}
@@ -317,10 +314,10 @@ export default async function CourseDetailsPage({
                       Your Instructor
                     </h3>
                     <div className="space-y-4">
-                      {course.instructor.image && (
+                      {course.instructor.photo && (
                         <Image
-                          src={urlFor(course.instructor.image).url()}
-                          alt={course.instructor.name}
+                          src={urlFor(course.instructor.photo).url()}
+                          alt={course.instructor.name || "Instructor"}
                           width={80}
                           height={80}
                           className="rounded-full mx-auto"
@@ -330,9 +327,9 @@ export default async function CourseDetailsPage({
                         <h4 className="font-semibold text-gray-900 dark:text-gray-100">
                           {course.instructor.name}
                         </h4>
-                        {course.instructor.title && (
+                        {course.instructor.name && (
                           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                            {course.instructor.title}
+                            {course.instructor.name}
                           </p>
                         )}
                       </div>

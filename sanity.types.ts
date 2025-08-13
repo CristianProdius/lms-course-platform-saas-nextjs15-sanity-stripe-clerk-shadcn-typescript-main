@@ -245,6 +245,7 @@ export type Module = {
   _updatedAt: string;
   _rev: string;
   title?: string;
+  description?: string;
   lessons?: Array<{
     _ref: string;
     _type: "reference";
@@ -261,7 +262,6 @@ export type Course = {
   _updatedAt: string;
   _rev: string;
   title?: string;
-  price?: number;
   slug?: Slug;
   description?: string;
   image?: {
@@ -282,6 +282,16 @@ export type Course = {
     _weak?: boolean;
     [internalGroqTypeReferenceTo]?: "category";
   };
+  instructor?: {
+    _ref: string;
+    _type: "reference";
+    _weak?: boolean;
+    [internalGroqTypeReferenceTo]?: "instructor";
+  };
+  individualPrice?: number;
+  organizationPrice?: number;
+  price?: number;
+  isFree?: boolean;
   modules?: Array<{
     _ref: string;
     _type: "reference";
@@ -289,12 +299,12 @@ export type Course = {
     _key: string;
     [internalGroqTypeReferenceTo]?: "module";
   }>;
-  instructor?: {
-    _ref: string;
-    _type: "reference";
-    _weak?: boolean;
-    [internalGroqTypeReferenceTo]?: "instructor";
-  };
+  content?: BlockContent;
+  learningObjectives?: Array<string>;
+  requirements?: Array<string>;
+  level?: "beginner" | "intermediate" | "advanced" | "all-levels";
+  featured?: boolean;
+  publishedAt?: string;
 };
 
 export type Instructor = {
@@ -452,13 +462,241 @@ export type SanityAssetSourceData = {
 
 export type AllSanitySchemaTypes = OrganizationCourse | Subscription | LessonCompletion | Enrollment | Student | Organization | BlockContent | Lesson | Module | Course | Instructor | Category | SanityImagePaletteSwatch | SanityImagePalette | SanityImageDimensions | SanityImageHotspot | SanityImageCrop | SanityFileAsset | SanityImageAsset | SanityImageMetadata | Geopoint | Slug | SanityAssetSourceData;
 export declare const internalGroqTypeReferenceTo: unique symbol;
-// Source: app/api/clerk-webhook/route.ts
+// Source: app/(dashboard)/dashboard/page.tsx
+// Variable: individualEnrollmentsQuery
+// Query: *[_type == "enrollment" && student._ref == $studentId] {    _id,    course->{      _id,      title,      description,      thumbnail,      price,      "modules": modules[]->{        _id,        title,        "lessons": lessons[]->{          _id,          title,          slug        }      }    }  }
+export type IndividualEnrollmentsQueryResult = Array<{
+  _id: string;
+  course: {
+    _id: string;
+    title: string | null;
+    description: string | null;
+    thumbnail: null;
+    price: number | null;
+    modules: Array<{
+      _id: string;
+      title: string | null;
+      lessons: Array<{
+        _id: string;
+        title: string | null;
+        slug: Slug | null;
+      }> | null;
+    }> | null;
+  } | null;
+}>;
+// Variable: orgSubscriptionQuery
+// Query: *[_type == "organization" && _id == $orgId][0] {      subscriptionStatus,      stripeCustomerId    }
+export type OrgSubscriptionQueryResult = {
+  subscriptionStatus: "active" | "cancelled" | "expired" | "inactive" | null;
+  stripeCustomerId: string | null;
+} | null;
+// Variable: allCoursesQuery
+// Query: *[_type == "course" && !(_id in path("drafts.**"))] {        _id,        title,        description,        thumbnail,        price,        "modules": modules[]->{          _id,          title,          "lessons": lessons[]->{            _id,            title,            slug          }        }      }
+export type AllCoursesQueryResult = Array<{
+  _id: string;
+  title: string | null;
+  description: string | null;
+  thumbnail: null;
+  price: number | null;
+  modules: Array<{
+    _id: string;
+    title: string | null;
+    lessons: Array<{
+      _id: string;
+      title: string | null;
+      slug: Slug | null;
+    }> | null;
+  }> | null;
+}>;
 // Variable: orgQuery
-// Query: *[_type == "organization" && clerkOrganizationId == $clerkOrgId][0]._id
+// Query: *[_type == "organization" && _id == $orgId][0].name
 export type OrgQueryResult = string | null;
-// Variable: studentQuery
-// Query: *[_type == "student" && clerkId == $clerkId][0]._id
-export type StudentQueryResult = string | null;
+
+// Source: lib/auth.ts
+// Variable: orgCourseQuery
+// Query: *[_type == "organizationCourse" &&         organization._ref == $organizationId &&         course._ref == $courseId &&         isActive == true][0]
+export type OrgCourseQueryResult = {
+  _id: string;
+  _type: "organizationCourse";
+  _createdAt: string;
+  _updatedAt: string;
+  _rev: string;
+  organization?: {
+    _ref: string;
+    _type: "reference";
+    _weak?: boolean;
+    [internalGroqTypeReferenceTo]?: "organization";
+  };
+  course?: {
+    _ref: string;
+    _type: "reference";
+    _weak?: boolean;
+    [internalGroqTypeReferenceTo]?: "course";
+  };
+  purchasedBy?: {
+    _ref: string;
+    _type: "reference";
+    _weak?: boolean;
+    [internalGroqTypeReferenceTo]?: "student";
+  };
+  amount?: number;
+  paymentId?: string;
+  purchasedAt?: string;
+  expiresAt?: string;
+  isActive?: boolean;
+} | null;
+// Variable: orgCoursesQuery
+// Query: *[_type == "organizationCourse" &&         organization._ref == $organizationId &&         isActive == true      ] {        course->{          ...,          "slug": slug.current,          "category": category->{...},          "instructor": instructor->{...}        }      }
+export type OrgCoursesQueryResult = Array<{
+  course: {
+    _id: string;
+    _type: "course";
+    _createdAt: string;
+    _updatedAt: string;
+    _rev: string;
+    title?: string;
+    slug: string | null;
+    description?: string;
+    image?: {
+      asset?: {
+        _ref: string;
+        _type: "reference";
+        _weak?: boolean;
+        [internalGroqTypeReferenceTo]?: "sanity.imageAsset";
+      };
+      media?: unknown;
+      hotspot?: SanityImageHotspot;
+      crop?: SanityImageCrop;
+      _type: "image";
+    };
+    category: {
+      _id: string;
+      _type: "category";
+      _createdAt: string;
+      _updatedAt: string;
+      _rev: string;
+      name?: string;
+      slug?: Slug;
+      description?: string;
+      icon?: string;
+      color?: string;
+    } | null;
+    instructor: {
+      _id: string;
+      _type: "instructor";
+      _createdAt: string;
+      _updatedAt: string;
+      _rev: string;
+      name?: string;
+      bio?: string;
+      photo?: {
+        asset?: {
+          _ref: string;
+          _type: "reference";
+          _weak?: boolean;
+          [internalGroqTypeReferenceTo]?: "sanity.imageAsset";
+        };
+        media?: unknown;
+        hotspot?: SanityImageHotspot;
+        crop?: SanityImageCrop;
+        _type: "image";
+      };
+    } | null;
+    individualPrice?: number;
+    organizationPrice?: number;
+    price?: number;
+    isFree?: boolean;
+    modules?: Array<{
+      _ref: string;
+      _type: "reference";
+      _weak?: boolean;
+      _key: string;
+      [internalGroqTypeReferenceTo]?: "module";
+    }>;
+    content?: BlockContent;
+    learningObjectives?: Array<string>;
+    requirements?: Array<string>;
+    level?: "advanced" | "all-levels" | "beginner" | "intermediate";
+    featured?: boolean;
+    publishedAt?: string;
+  } | null;
+}>;
+// Variable: enrollmentsQuery
+// Query: *[_type == "enrollment" && student._ref == $studentId] {      course->{        ...,        "slug": slug.current,        "category": category->{...},        "instructor": instructor->{...}      }    }
+export type EnrollmentsQueryResult = Array<{
+  course: {
+    _id: string;
+    _type: "course";
+    _createdAt: string;
+    _updatedAt: string;
+    _rev: string;
+    title?: string;
+    slug: string | null;
+    description?: string;
+    image?: {
+      asset?: {
+        _ref: string;
+        _type: "reference";
+        _weak?: boolean;
+        [internalGroqTypeReferenceTo]?: "sanity.imageAsset";
+      };
+      media?: unknown;
+      hotspot?: SanityImageHotspot;
+      crop?: SanityImageCrop;
+      _type: "image";
+    };
+    category: {
+      _id: string;
+      _type: "category";
+      _createdAt: string;
+      _updatedAt: string;
+      _rev: string;
+      name?: string;
+      slug?: Slug;
+      description?: string;
+      icon?: string;
+      color?: string;
+    } | null;
+    instructor: {
+      _id: string;
+      _type: "instructor";
+      _createdAt: string;
+      _updatedAt: string;
+      _rev: string;
+      name?: string;
+      bio?: string;
+      photo?: {
+        asset?: {
+          _ref: string;
+          _type: "reference";
+          _weak?: boolean;
+          [internalGroqTypeReferenceTo]?: "sanity.imageAsset";
+        };
+        media?: unknown;
+        hotspot?: SanityImageHotspot;
+        crop?: SanityImageCrop;
+        _type: "image";
+      };
+    } | null;
+    individualPrice?: number;
+    organizationPrice?: number;
+    price?: number;
+    isFree?: boolean;
+    modules?: Array<{
+      _ref: string;
+      _type: "reference";
+      _weak?: boolean;
+      _key: string;
+      [internalGroqTypeReferenceTo]?: "module";
+    }>;
+    content?: BlockContent;
+    learningObjectives?: Array<string>;
+    requirements?: Array<string>;
+    level?: "advanced" | "all-levels" | "beginner" | "intermediate";
+    featured?: boolean;
+    publishedAt?: string;
+  } | null;
+}>;
 
 // Source: sanity/lib/courses/getCourseById.ts
 // Variable: getCourseByIdQuery
@@ -470,7 +708,6 @@ export type GetCourseByIdQueryResult = {
   _updatedAt: string;
   _rev: string;
   title?: string;
-  price?: number;
   slug?: Slug;
   description?: string;
   image?: {
@@ -497,6 +734,31 @@ export type GetCourseByIdQueryResult = {
     icon?: string;
     color?: string;
   } | null;
+  instructor: {
+    _id: string;
+    _type: "instructor";
+    _createdAt: string;
+    _updatedAt: string;
+    _rev: string;
+    name?: string;
+    bio?: string;
+    photo?: {
+      asset?: {
+        _ref: string;
+        _type: "reference";
+        _weak?: boolean;
+        [internalGroqTypeReferenceTo]?: "sanity.imageAsset";
+      };
+      media?: unknown;
+      hotspot?: SanityImageHotspot;
+      crop?: SanityImageCrop;
+      _type: "image";
+    };
+  } | null;
+  individualPrice?: number;
+  organizationPrice?: number;
+  price?: number;
+  isFree?: boolean;
   modules: Array<{
     _id: string;
     _type: "module";
@@ -504,6 +766,7 @@ export type GetCourseByIdQueryResult = {
     _updatedAt: string;
     _rev: string;
     title?: string;
+    description?: string;
     lessons: Array<{
       _id: string;
       _type: "lesson";
@@ -553,27 +816,12 @@ export type GetCourseByIdQueryResult = {
       }>;
     }> | null;
   }> | null;
-  instructor: {
-    _id: string;
-    _type: "instructor";
-    _createdAt: string;
-    _updatedAt: string;
-    _rev: string;
-    name?: string;
-    bio?: string;
-    photo?: {
-      asset?: {
-        _ref: string;
-        _type: "reference";
-        _weak?: boolean;
-        [internalGroqTypeReferenceTo]?: "sanity.imageAsset";
-      };
-      media?: unknown;
-      hotspot?: SanityImageHotspot;
-      crop?: SanityImageCrop;
-      _type: "image";
-    };
-  } | null;
+  content?: BlockContent;
+  learningObjectives?: Array<string>;
+  requirements?: Array<string>;
+  level?: "advanced" | "all-levels" | "beginner" | "intermediate";
+  featured?: boolean;
+  publishedAt?: string;
 } | null;
 
 // Source: sanity/lib/courses/getCourseBySlug.ts
@@ -586,7 +834,6 @@ export type GetCourseBySlugQueryResult = {
   _updatedAt: string;
   _rev: string;
   title?: string;
-  price?: number;
   slug?: Slug;
   description?: string;
   image?: {
@@ -613,6 +860,31 @@ export type GetCourseBySlugQueryResult = {
     icon?: string;
     color?: string;
   } | null;
+  instructor: {
+    _id: string;
+    _type: "instructor";
+    _createdAt: string;
+    _updatedAt: string;
+    _rev: string;
+    name?: string;
+    bio?: string;
+    photo?: {
+      asset?: {
+        _ref: string;
+        _type: "reference";
+        _weak?: boolean;
+        [internalGroqTypeReferenceTo]?: "sanity.imageAsset";
+      };
+      media?: unknown;
+      hotspot?: SanityImageHotspot;
+      crop?: SanityImageCrop;
+      _type: "image";
+    };
+  } | null;
+  individualPrice?: number;
+  organizationPrice?: number;
+  price?: number;
+  isFree?: boolean;
   modules: Array<{
     _id: string;
     _type: "module";
@@ -620,6 +892,7 @@ export type GetCourseBySlugQueryResult = {
     _updatedAt: string;
     _rev: string;
     title?: string;
+    description?: string;
     lessons: Array<{
       _id: string;
       _type: "lesson";
@@ -669,27 +942,12 @@ export type GetCourseBySlugQueryResult = {
       }>;
     }> | null;
   }> | null;
-  instructor: {
-    _id: string;
-    _type: "instructor";
-    _createdAt: string;
-    _updatedAt: string;
-    _rev: string;
-    name?: string;
-    bio?: string;
-    photo?: {
-      asset?: {
-        _ref: string;
-        _type: "reference";
-        _weak?: boolean;
-        [internalGroqTypeReferenceTo]?: "sanity.imageAsset";
-      };
-      media?: unknown;
-      hotspot?: SanityImageHotspot;
-      crop?: SanityImageCrop;
-      _type: "image";
-    };
-  } | null;
+  content?: BlockContent;
+  learningObjectives?: Array<string>;
+  requirements?: Array<string>;
+  level?: "advanced" | "all-levels" | "beginner" | "intermediate";
+  featured?: boolean;
+  publishedAt?: string;
 } | null;
 
 // Source: sanity/lib/courses/getCourses.ts
@@ -702,7 +960,6 @@ export type GetCoursesQueryResult = Array<{
   _updatedAt: string;
   _rev: string;
   title?: string;
-  price?: number;
   slug: string | null;
   description?: string;
   image?: {
@@ -729,13 +986,6 @@ export type GetCoursesQueryResult = Array<{
     icon?: string;
     color?: string;
   } | null;
-  modules?: Array<{
-    _ref: string;
-    _type: "reference";
-    _weak?: boolean;
-    _key: string;
-    [internalGroqTypeReferenceTo]?: "module";
-  }>;
   instructor: {
     _id: string;
     _type: "instructor";
@@ -757,6 +1007,23 @@ export type GetCoursesQueryResult = Array<{
       _type: "image";
     };
   } | null;
+  individualPrice?: number;
+  organizationPrice?: number;
+  price?: number;
+  isFree?: boolean;
+  modules?: Array<{
+    _ref: string;
+    _type: "reference";
+    _weak?: boolean;
+    _key: string;
+    [internalGroqTypeReferenceTo]?: "module";
+  }>;
+  content?: BlockContent;
+  learningObjectives?: Array<string>;
+  requirements?: Array<string>;
+  level?: "advanced" | "all-levels" | "beginner" | "intermediate";
+  featured?: boolean;
+  publishedAt?: string;
 }>;
 
 // Source: sanity/lib/courses/searchCourses.ts
@@ -769,7 +1036,6 @@ export type SearchQueryResult = Array<{
   _updatedAt: string;
   _rev: string;
   title?: string;
-  price?: number;
   slug: string | null;
   description?: string;
   image?: {
@@ -796,13 +1062,6 @@ export type SearchQueryResult = Array<{
     icon?: string;
     color?: string;
   } | null;
-  modules?: Array<{
-    _ref: string;
-    _type: "reference";
-    _weak?: boolean;
-    _key: string;
-    [internalGroqTypeReferenceTo]?: "module";
-  }>;
   instructor: {
     _id: string;
     _type: "instructor";
@@ -824,6 +1083,23 @@ export type SearchQueryResult = Array<{
       _type: "image";
     };
   } | null;
+  individualPrice?: number;
+  organizationPrice?: number;
+  price?: number;
+  isFree?: boolean;
+  modules?: Array<{
+    _ref: string;
+    _type: "reference";
+    _weak?: boolean;
+    _key: string;
+    [internalGroqTypeReferenceTo]?: "module";
+  }>;
+  content?: BlockContent;
+  learningObjectives?: Array<string>;
+  requirements?: Array<string>;
+  level?: "advanced" | "all-levels" | "beginner" | "intermediate";
+  featured?: boolean;
+  publishedAt?: string;
 }>;
 
 // Source: sanity/lib/lessons/getCourseProgress.ts
@@ -897,6 +1173,7 @@ export type ProgressQueryResult = {
       _updatedAt: string;
       _rev: string;
       title?: string;
+      description?: string;
       lessons?: Array<{
         _ref: string;
         _type: "reference";
@@ -920,7 +1197,6 @@ export type ProgressQueryResult = {
     _updatedAt: string;
     _rev: string;
     title?: string;
-    price?: number;
     slug?: Slug;
     description?: string;
     image?: {
@@ -941,6 +1217,16 @@ export type ProgressQueryResult = {
       _weak?: boolean;
       [internalGroqTypeReferenceTo]?: "category";
     };
+    instructor?: {
+      _ref: string;
+      _type: "reference";
+      _weak?: boolean;
+      [internalGroqTypeReferenceTo]?: "instructor";
+    };
+    individualPrice?: number;
+    organizationPrice?: number;
+    price?: number;
+    isFree?: boolean;
     modules: Array<{
       _id: string;
       _type: "module";
@@ -948,6 +1234,7 @@ export type ProgressQueryResult = {
       _updatedAt: string;
       _rev: string;
       title?: string;
+      description?: string;
       lessons: Array<{
         _id: string;
         _type: "lesson";
@@ -997,12 +1284,12 @@ export type ProgressQueryResult = {
         }>;
       }> | null;
     }> | null;
-    instructor?: {
-      _ref: string;
-      _type: "reference";
-      _weak?: boolean;
-      [internalGroqTypeReferenceTo]?: "instructor";
-    };
+    content?: BlockContent;
+    learningObjectives?: Array<string>;
+    requirements?: Array<string>;
+    level?: "advanced" | "all-levels" | "beginner" | "intermediate";
+    featured?: boolean;
+    publishedAt?: string;
   } | null;
 };
 
@@ -1166,6 +1453,7 @@ export type GetCompletionsQueryResult = {
       _updatedAt: string;
       _rev: string;
       title?: string;
+      description?: string;
       lessons?: Array<{
         _ref: string;
         _type: "reference";
@@ -1189,7 +1477,6 @@ export type GetCompletionsQueryResult = {
     _updatedAt: string;
     _rev: string;
     title?: string;
-    price?: number;
     slug?: Slug;
     description?: string;
     image?: {
@@ -1210,6 +1497,16 @@ export type GetCompletionsQueryResult = {
       _weak?: boolean;
       [internalGroqTypeReferenceTo]?: "category";
     };
+    instructor?: {
+      _ref: string;
+      _type: "reference";
+      _weak?: boolean;
+      [internalGroqTypeReferenceTo]?: "instructor";
+    };
+    individualPrice?: number;
+    organizationPrice?: number;
+    price?: number;
+    isFree?: boolean;
     modules: Array<{
       _id: string;
       _type: "module";
@@ -1217,6 +1514,7 @@ export type GetCompletionsQueryResult = {
       _updatedAt: string;
       _rev: string;
       title?: string;
+      description?: string;
       lessons: Array<{
         _id: string;
         _type: "lesson";
@@ -1266,12 +1564,12 @@ export type GetCompletionsQueryResult = {
         }>;
       }> | null;
     }> | null;
-    instructor?: {
-      _ref: string;
-      _type: "reference";
-      _weak?: boolean;
-      [internalGroqTypeReferenceTo]?: "instructor";
-    };
+    content?: BlockContent;
+    learningObjectives?: Array<string>;
+    requirements?: Array<string>;
+    level?: "advanced" | "all-levels" | "beginner" | "intermediate";
+    featured?: boolean;
+    publishedAt?: string;
   } | null;
 };
 
@@ -1298,7 +1596,6 @@ export type GetEnrolledCoursesQueryResult = {
       _updatedAt: string;
       _rev: string;
       title?: string;
-      price?: number;
       slug: string | null;
       description?: string;
       image?: {
@@ -1325,6 +1622,31 @@ export type GetEnrolledCoursesQueryResult = {
         icon?: string;
         color?: string;
       } | null;
+      instructor: {
+        _id: string;
+        _type: "instructor";
+        _createdAt: string;
+        _updatedAt: string;
+        _rev: string;
+        name?: string;
+        bio?: string;
+        photo?: {
+          asset?: {
+            _ref: string;
+            _type: "reference";
+            _weak?: boolean;
+            [internalGroqTypeReferenceTo]?: "sanity.imageAsset";
+          };
+          media?: unknown;
+          hotspot?: SanityImageHotspot;
+          crop?: SanityImageCrop;
+          _type: "image";
+        };
+      } | null;
+      individualPrice?: number;
+      organizationPrice?: number;
+      price?: number;
+      isFree?: boolean;
       modules: Array<{
         _id: string;
         _type: "module";
@@ -1332,6 +1654,7 @@ export type GetEnrolledCoursesQueryResult = {
         _updatedAt: string;
         _rev: string;
         title?: string;
+        description?: string;
         lessons: Array<{
           _id: string;
           _type: "lesson";
@@ -1381,27 +1704,12 @@ export type GetEnrolledCoursesQueryResult = {
           }>;
         }> | null;
       }> | null;
-      instructor: {
-        _id: string;
-        _type: "instructor";
-        _createdAt: string;
-        _updatedAt: string;
-        _rev: string;
-        name?: string;
-        bio?: string;
-        photo?: {
-          asset?: {
-            _ref: string;
-            _type: "reference";
-            _weak?: boolean;
-            [internalGroqTypeReferenceTo]?: "sanity.imageAsset";
-          };
-          media?: unknown;
-          hotspot?: SanityImageHotspot;
-          crop?: SanityImageCrop;
-          _type: "image";
-        };
-      } | null;
+      content?: BlockContent;
+      learningObjectives?: Array<string>;
+      requirements?: Array<string>;
+      level?: "advanced" | "all-levels" | "beginner" | "intermediate";
+      featured?: boolean;
+      publishedAt?: string;
     } | null;
     amount?: number;
     paymentId?: string;
@@ -1438,8 +1746,13 @@ export type GetStudentByClerkIdQueryResult = {
 import "@sanity/client";
 declare module "@sanity/client" {
   interface SanityQueries {
-    "*[_type == \"organization\" && clerkOrganizationId == $clerkOrgId][0]._id": OrgQueryResult;
-    "*[_type == \"student\" && clerkId == $clerkId][0]._id": StudentQueryResult;
+    "*[_type == \"enrollment\" && student._ref == $studentId] {\n    _id,\n    course->{\n      _id,\n      title,\n      description,\n      thumbnail,\n      price,\n      \"modules\": modules[]->{\n        _id,\n        title,\n        \"lessons\": lessons[]->{\n          _id,\n          title,\n          slug\n        }\n      }\n    }\n  }": IndividualEnrollmentsQueryResult;
+    "*[_type == \"organization\" && _id == $orgId][0] {\n      subscriptionStatus,\n      stripeCustomerId\n    }": OrgSubscriptionQueryResult;
+    "*[_type == \"course\" && !(_id in path(\"drafts.**\"))] {\n        _id,\n        title,\n        description,\n        thumbnail,\n        price,\n        \"modules\": modules[]->{\n          _id,\n          title,\n          \"lessons\": lessons[]->{\n            _id,\n            title,\n            slug\n          }\n        }\n      }": AllCoursesQueryResult;
+    "*[_type == \"organization\" && _id == $orgId][0].name": OrgQueryResult;
+    "*[_type == \"organizationCourse\" && \n        organization._ref == $organizationId && \n        course._ref == $courseId && \n        isActive == true][0]": OrgCourseQueryResult;
+    "*[_type == \"organizationCourse\" && \n        organization._ref == $organizationId && \n        isActive == true\n      ] {\n        course->{\n          ...,\n          \"slug\": slug.current,\n          \"category\": category->{...},\n          \"instructor\": instructor->{...}\n        }\n      }": OrgCoursesQueryResult;
+    "*[_type == \"enrollment\" && student._ref == $studentId] {\n      course->{\n        ...,\n        \"slug\": slug.current,\n        \"category\": category->{...},\n        \"instructor\": instructor->{...}\n      }\n    }": EnrollmentsQueryResult;
     "*[_type == \"course\" && _id == $id][0] {\n      ...,  // Spread all course fields\n      \"category\": category->{...},  // Expand the category reference, including all its fields\n      \"instructor\": instructor->{...},  // Expand the instructor reference, including all its fields\n      \"modules\": modules[]-> {  // Expand the array of module references\n        ...,  // Include all module fields\n        \"lessons\": lessons[]-> {...}  // For each module, expand its array of lesson references\n      }\n    }": GetCourseByIdQueryResult;
     "*[_type == \"course\" && slug.current == $slug][0] {\n      ...,\n      \"category\": category->{...},\n      \"instructor\": instructor->{...},\n      \"modules\": modules[]-> {\n        ...,\n        \"lessons\": lessons[]-> {...}\n      }\n    }": GetCourseBySlugQueryResult;
     "*[_type == \"course\"] {\n    ...,\n    \"slug\": slug.current,\n    \"category\": category->{...},\n    \"instructor\": instructor->{...}\n  }": GetCoursesQueryResult;

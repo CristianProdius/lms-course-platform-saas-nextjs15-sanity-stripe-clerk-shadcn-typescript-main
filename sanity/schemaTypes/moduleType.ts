@@ -12,6 +12,12 @@ export const moduleType = defineType({
       validation: (rule) => rule.required(),
     }),
     defineField({
+      name: "description",
+      title: "Module Description",
+      type: "text",
+      description: "Brief description of what this module covers",
+    }),
+    defineField({
       name: "lessons",
       title: "Lessons",
       type: "array",
