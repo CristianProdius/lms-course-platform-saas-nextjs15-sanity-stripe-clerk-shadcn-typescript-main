@@ -2,20 +2,16 @@
 "use client";
 
 import { useState } from "react";
-import { useOrganization, useUser } from "@clerk/nextjs";
+import { useOrganization } from "@clerk/nextjs";
 import {
   Building2,
   User,
   Check,
   ChevronRight,
-  Users,
   Shield,
   TrendingUp,
-  Clock,
-  Award,
   Sparkles,
   AlertCircle,
-  Zap,
   Crown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -52,7 +48,6 @@ export default function CoursePurchaseOptions({
   organizationPrice = 5000,
   isFree = false,
 }: CoursePurchaseOptionsProps) {
-  const { user } = useUser();
   const { organization, membership } = useOrganization();
   const [selectedOption, setSelectedOption] = useState<
     "individual" | "organization"

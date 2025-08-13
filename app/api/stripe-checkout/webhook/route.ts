@@ -10,6 +10,65 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
 
+// Define proper TypeScript interfaces
+interface Student {
+  _id: string;
+  clerkId: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
+}
+
+interface Enrollment {
+  _id: string;
+  student: {
+    _type: "reference";
+    _ref: string;
+  };
+  course: {
+    _type: "reference";
+    _ref: string;
+  };
+  enrolledAt: string;
+  amount: number;
+  paymentId: string;
+}
+
+interface OrganizationCourse {
+  _id: string;
+  organization: {
+    _type: "reference";
+    _ref: string;
+  };
+  course: {
+    _type: "reference";
+    _ref: string;
+  };
+  purchasedBy: {
+    _type: "reference";
+    _ref: string;
+  };
+  purchasedAt: string;
+  amount: number;
+  paymentId: string;
+  isActive: boolean;
+  refundedAt?: string;
+}
+
+interface Organization {
+  _id: string;
+  name: string;
+  billingEmail: string;
+  stripeCustomerId?: string;
+  purchasedCourses?: CourseReference[];
+}
+
+interface CourseReference {
+  _type: "reference";
+  _ref: string;
+  _key: string;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.text();
@@ -63,7 +122,7 @@ export async function POST(request: NextRequest) {
         // Handle individual purchase ($1,000)
 
         // Verify student exists
-        const student = await client.fetch(
+        const student: Student | null = await client.fetch(
           groq`*[_type == "student" && _id == $studentId][0]`,
           { studentId }
         );
@@ -74,7 +133,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Check if enrollment already exists (prevent duplicates)
-        const existingEnrollment = await client.fetch(
+        const existingEnrollment: Enrollment | null = await client.fetch(
           groq`*[_type == "enrollment" && 
                student._ref == $studentId && 
                course._ref == $courseId][0]`,
@@ -82,6 +141,11 @@ export async function POST(request: NextRequest) {
         );
 
         if (!existingEnrollment) {
+          // Ensure studentId is defined
+          if (!studentId) {
+            console.error("studentId is undefined when creating enrollment");
+            return new NextResponse("studentId is undefined", { status: 400 });
+          }
           // Create individual enrollment
           const enrollment = await client.create({
             _type: "enrollment",
@@ -111,7 +175,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Check if organization course already exists (prevent duplicates)
-        const existingOrgCourse = await client.fetch(
+        const existingOrgCourse: OrganizationCourse | null = await client.fetch(
           groq`*[_type == "organizationCourse" && 
                organization._ref == $orgId && 
                course._ref == $courseId && 
@@ -121,7 +185,7 @@ export async function POST(request: NextRequest) {
 
         if (!existingOrgCourse) {
           // Create organization course record
-          const orgCourse = await client.create({
+          const orgCourse: OrganizationCourse = await client.create({
             _type: "organizationCourse",
             organization: {
               _type: "reference",
@@ -145,7 +209,7 @@ export async function POST(request: NextRequest) {
 
           // Auto-enroll the admin who made the purchase
           // Check if admin already enrolled
-          const adminEnrollment = await client.fetch(
+          const adminEnrollment: Enrollment | null = await client.fetch(
             groq`*[_type == "enrollment" && 
                  student._ref == $adminId && 
                  course._ref == $courseId][0]`,
@@ -180,7 +244,7 @@ export async function POST(request: NextRequest) {
                 _type: "reference",
                 _ref: courseId,
                 _key: courseId,
-              },
+              } as CourseReference,
             ])
             .commit();
 
@@ -215,7 +279,7 @@ export async function POST(request: NextRequest) {
         const paymentId = session.id;
 
         // Handle individual enrollment refund
-        const enrollment = await client.fetch(
+        const enrollment: Enrollment | null = await client.fetch(
           groq`*[_type == "enrollment" && paymentId == $paymentId][0]`,
           { paymentId }
         );
@@ -227,7 +291,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Handle organization course refund
-        const orgCourse = await client.fetch(
+        const orgCourse: OrganizationCourse | null = await client.fetch(
           groq`*[_type == "organizationCourse" && paymentId == $paymentId][0]`,
           { paymentId }
         );
@@ -245,14 +309,14 @@ export async function POST(request: NextRequest) {
           console.log("Organization course marked as refunded");
 
           // Remove from organization's purchased courses
-          const org = await client.fetch(
+          const org: Organization | null = await client.fetch(
             groq`*[_type == "organization" && _id == $orgId][0]`,
             { orgId: orgCourse.organization._ref }
           );
 
           if (org?.purchasedCourses) {
             const updatedCourses = org.purchasedCourses.filter(
-              (ref: any) => ref._ref !== orgCourse.course._ref
+              (ref: CourseReference) => ref._ref !== orgCourse.course._ref
             );
 
             await client

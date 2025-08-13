@@ -38,6 +38,30 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+// Proper TypeScript interfaces based on the project structure
+interface CourseLesson {
+  _id: string;
+  title: string;
+  duration?: number;
+  videoUrl?: string;
+  loomUrl?: string;
+  content?: Array<{
+    _type: string;
+    children?: Array<{
+      text?: string;
+    }>;
+  }>;
+  order?: number;
+}
+
+interface CourseModule {
+  _id: string;
+  title: string;
+  description?: string;
+  lessons?: CourseLesson[];
+  order?: number;
+}
+
 interface Course {
   _id: string;
   title: string;
@@ -66,7 +90,7 @@ interface Course {
   individualPrice: number;
   organizationPrice: number;
   isFree: boolean;
-  modules: any[];
+  modules: CourseModule[];
   learningObjectives?: string[];
   requirements?: string[];
   level: string;
@@ -105,7 +129,7 @@ export default function OrganizationBillingPage() {
 
   const [organizationData, setOrganizationData] =
     useState<OrganizationData | null>(null);
-  const [allCourses, setAllCourses] = useState<Course[]>([]);
+  const [, setAllCourses] = useState<Course[]>([]);
   const [purchasedCourses, setPurchasedCourses] = useState<Course[]>([]);
   const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
   const [billingHistory, setBillingHistory] = useState<BillingHistory[]>([]);
@@ -463,7 +487,7 @@ export default function OrganizationBillingPage() {
                           course.learningObjectives.length > 0 && (
                             <div>
                               <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-3">
-                                What You'll Learn:
+                                What You&apos;ll Learn:
                               </h4>
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                 {course.learningObjectives
@@ -757,7 +781,8 @@ export default function OrganizationBillingPage() {
               <CardHeader>
                 <CardTitle>Confirm Purchase</CardTitle>
                 <CardDescription>
-                  You're about to purchase training for your entire organization
+                  You&apos;re about to purchase training for your entire
+                  organization
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">

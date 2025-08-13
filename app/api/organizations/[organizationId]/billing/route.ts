@@ -4,6 +4,67 @@ import { client } from "@/sanity/lib/adminClient";
 import groq from "groq";
 import { auth } from "@clerk/nextjs/server";
 
+// Define proper TypeScript interfaces
+interface Organization {
+  _id: string;
+  name: string;
+  billingEmail: string;
+  stripeCustomerId?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+interface PurchasedCourse {
+  _id: string;
+  courseId: string;
+  courseTitle: string;
+  courseDescription: string;
+  courseThumbnail?: string;
+  courseSlug: string;
+  purchasedAt: string;
+  amount: number;
+  paymentId: string;
+  purchasedByName: string;
+  purchasedByEmail: string;
+}
+
+interface Course {
+  _id: string;
+  title: string;
+  description: string;
+  thumbnail?: string;
+  slug: string;
+  isPurchased: boolean;
+  enrolledEmployees: number;
+}
+
+interface RecentEnrollment {
+  _id: string;
+  studentName: string;
+  courseTitle: string;
+  enrolledAt: string;
+}
+
+interface BillingResponseData {
+  organization: {
+    _id: string;
+    name: string;
+    billingEmail: string;
+    stripeCustomerId?: string;
+    createdAt: string;
+  };
+  purchasedCourses: PurchasedCourse[];
+  availableCourses: Course[];
+  employeeCount: number;
+  totalInvestment: number;
+  totalSavings: number;
+  recentActivity: RecentEnrollment[];
+  pricing: {
+    organizationPrice: number;
+    individualPrice: number;
+  };
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ organizationId: string }> }
@@ -39,9 +100,12 @@ export async function GET(
       }
     `;
 
-    const organization = await client.fetch(organizationQuery, {
-      clerkOrgId: organizationId,
-    });
+    const organization: Organization | null = await client.fetch(
+      organizationQuery,
+      {
+        clerkOrgId: organizationId,
+      }
+    );
 
     if (!organization) {
       console.error("Organization not found for Clerk ID:", organizationId);
@@ -70,16 +134,19 @@ export async function GET(
       }
     `;
 
-    const purchasedCourses = await client.fetch(purchasedCoursesQuery, {
-      orgId: organization._id,
-    });
+    const purchasedCourses: PurchasedCourse[] = await client.fetch(
+      purchasedCoursesQuery,
+      {
+        orgId: organization._id,
+      }
+    );
 
     // Get current employee count
     const employeeCountQuery = groq`
       count(*[_type == "student" && organization._ref == $orgId])
     `;
 
-    const employeeCount = await client.fetch(employeeCountQuery, {
+    const employeeCount: number = await client.fetch(employeeCountQuery, {
       orgId: organization._id,
     });
 
@@ -100,13 +167,13 @@ export async function GET(
       }
     `;
 
-    const allCourses = await client.fetch(allCoursesQuery, {
+    const allCourses: Course[] = await client.fetch(allCoursesQuery, {
       orgId: organization._id,
     });
 
-    // Calculate total investment and savings
+    // Calculate total investment and savings with proper typing
     const totalInvestment = purchasedCourses.reduce(
-      (sum: number, course: any) => sum + (course.amount || 0),
+      (sum: number, course: PurchasedCourse) => sum + (course.amount || 0),
       0
     );
 
@@ -128,12 +195,15 @@ export async function GET(
       }
     `;
 
-    const recentEnrollments = await client.fetch(recentEnrollmentsQuery, {
-      orgId: organization._id,
-    });
+    const recentEnrollments: RecentEnrollment[] = await client.fetch(
+      recentEnrollmentsQuery,
+      {
+        orgId: organization._id,
+      }
+    );
 
-    // Prepare response data
-    const responseData = {
+    // Prepare response data with proper typing
+    const responseData: BillingResponseData = {
       organization: {
         _id: organization._id,
         name: organization.name,

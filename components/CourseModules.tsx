@@ -4,7 +4,6 @@
 import { useState } from "react";
 import {
   ChevronDown,
-  ChevronUp,
   PlayCircle,
   Lock,
   Clock,
@@ -12,12 +11,28 @@ import {
   CheckCircle,
 } from "lucide-react";
 
+// Define proper types for Sanity's Portable Text content
+interface PortableTextBlock {
+  _type: "block";
+  children?: Array<{
+    text?: string;
+    _type?: string;
+    marks?: string[];
+  }>;
+  style?: string;
+  markDefs?: Array<{
+    _type: string;
+    _key: string;
+    [key: string]: unknown;
+  }>;
+}
+
 interface Lesson {
   _id: string;
   title?: string;
   duration?: number;
   videoUrl?: string;
-  content?: any;
+  content?: PortableTextBlock[];
   order?: number;
 }
 

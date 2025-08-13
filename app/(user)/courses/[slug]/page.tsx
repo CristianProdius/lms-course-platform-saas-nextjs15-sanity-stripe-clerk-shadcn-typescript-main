@@ -1,4 +1,3 @@
-// app/(user)/courses/[slug]/page.tsx
 import { currentUser } from "@clerk/nextjs/server";
 import { getStudentByClerkId } from "@/sanity/lib/student/getStudentByClerkId";
 import { checkCourseAccess } from "@/actions/courseCheckout";
@@ -15,7 +14,6 @@ import {
   Star,
   BarChart,
   Globe,
-  PlayCircle,
   Users,
   Award,
   FileText,
@@ -26,27 +24,33 @@ import {
   Target,
   Sparkles,
 } from "lucide-react";
+import Link from "next/link";
 
+// Fix 1: Define interface with Promise type only
+interface CourseDetailsPageProps {
+  params: Promise<{ slug: string }>;
+}
+
+// Fix 2: Use the interface in the function
 export default async function CourseDetailsPage({
   params,
-}: {
-  params: { slug: string } | Promise<{ slug: string }>;
-}) {
+}: CourseDetailsPageProps) {
   const user = await currentUser();
-  const resolvedParams = await params;
-  const course = await getCourseBySlug(resolvedParams.slug);
+  // Fix 3: Destructure slug directly from awaited params
+  const { slug } = await params;
+  const course = await getCourseBySlug(slug);
 
   if (!course) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#2A4666] to-[#1a2d42]">
         <div className="text-center">
           <p className="text-2xl text-white mb-4">Course not found</p>
-          <a
+          <Link
             href="/courses"
             className="text-[#FF4A1C] hover:underline font-semibold"
           >
             Browse all courses →
-          </a>
+          </Link>
         </div>
       </div>
     );
@@ -299,7 +303,7 @@ export default async function CourseDetailsPage({
                         <Target className="w-6 h-6 text-white" />
                       </div>
                       <h2 className="text-2xl font-bold text-[#2A4666]">
-                        What you'll learn
+                        What you&apos;ll learn
                       </h2>
                     </div>
                     <div className="grid md:grid-cols-2 gap-4">
