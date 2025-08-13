@@ -380,11 +380,11 @@ export default function OrganizationInvitePage() {
         {/* Header */}
         <div className="mb-8">
           <Link
-            href="/my-courses"
+            href="/dashboard/admin"
             className="inline-flex items-center text-sm text-gray-600 hover:text-[#FF4A1C] transition-colors mb-4"
           >
             <ChevronLeft className="h-4 w-4 mr-1" />
-            Back to My Courses
+            Back to Admin Dashboard
           </Link>
 
           <div className="flex items-center justify-between">

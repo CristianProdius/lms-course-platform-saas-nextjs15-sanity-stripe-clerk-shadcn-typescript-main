@@ -298,11 +298,11 @@ export default function OrganizationBillingPage() {
         {/* Header */}
         <div className="mb-8">
           <Link
-            href="/dashboard/organization/invite"
+            href="/dashboard/admin"
             className="inline-flex items-center text-sm text-gray-600 hover:text-[#FF4A1C] transition-colors mb-4"
           >
             <ChevronLeft className="h-4 w-4 mr-1" />
-            Back to Team Management
+            Back to Admin Dashboard
           </Link>
 
           <div className="flex items-center justify-between">
