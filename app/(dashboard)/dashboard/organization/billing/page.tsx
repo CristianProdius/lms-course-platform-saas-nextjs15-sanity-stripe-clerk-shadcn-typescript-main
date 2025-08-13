@@ -1,5 +1,6 @@
 "use client";
 
+import { createOrganizationCourseCheckout } from "@/actions/courseCheckout";
 import { useState, useEffect, useCallback } from "react";
 import { useOrganization, useUser } from "@clerk/nextjs";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -13,7 +14,6 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader } from "@/components/ui/loader";
@@ -21,117 +21,68 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   CreditCard,
   Users,
-  Building2,
   CheckCircle,
   XCircle,
-  TrendingUp,
   Download,
   Calendar,
   AlertCircle,
-  Zap,
-  Shield,
-  Star,
-  ChevronRight,
   ChevronLeft,
   Receipt,
   Settings,
   HelpCircle,
-  ArrowUpRight,
-  ArrowDownRight,
   Sparkles,
+  BookOpen,
+  ShoppingCart,
+  Award,
+  PlayCircle,
 } from "lucide-react";
 import Link from "next/link";
-import {
-  createOrganizationCheckout,
-  updateOrganizationSubscription,
-  cancelOrganizationSubscription,
-  getCustomerPortalUrl,
-} from "@/actions/createOrganizationCheckout";
 
-interface SubscriptionPlan {
-  id: string;
-  name: string;
-  pricePerMonth: number;
-  employeeLimit: number;
-  features: string[];
-  popular?: boolean;
-  gradient: string;
-  lightGradient: string;
-  icon: typeof Shield;
+interface Course {
+  _id: string;
+  title: string;
+  slug: {
+    current: string;
+  };
+  description: string;
+  image?: {
+    asset: {
+      url: string;
+    };
+  };
+  category?: {
+    _id: string;
+    title: string;
+  };
+  instructor?: {
+    name: string;
+    bio: string;
+    photo?: {
+      asset: {
+        url: string;
+      };
+    };
+  };
+  individualPrice: number;
+  organizationPrice: number;
+  isFree: boolean;
+  modules: any[];
+  learningObjectives?: string[];
+  requirements?: string[];
+  level: string;
+  featured: boolean;
+  publishedAt: string;
+  purchased?: boolean;
+  purchasedDate?: string;
+  activeUsers?: number;
 }
-
-const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
-  {
-    id: "starter",
-    name: "Starter",
-    pricePerMonth: 299,
-    employeeLimit: 10,
-    features: [
-      "Up to 10 employees",
-      "All training courses",
-      "Progress tracking",
-      "Basic support",
-      "Certificate generation",
-    ],
-    gradient: "from-blue-600 to-cyan-600",
-    lightGradient: "from-blue-50 to-cyan-50",
-    icon: Zap,
-  },
-  {
-    id: "professional",
-    name: "Professional",
-    pricePerMonth: 999,
-    employeeLimit: 50,
-    features: [
-      "Up to 50 employees",
-      "All training courses",
-      "Advanced analytics",
-      "Priority support",
-      "Custom onboarding",
-      "API access",
-    ],
-    popular: true,
-    gradient: "from-[#FF4A1C] to-[#2A4666]",
-    lightGradient: "from-[#FF4A1C]/10 to-[#2A4666]/10",
-    icon: Star,
-  },
-  {
-    id: "enterprise",
-    name: "Enterprise",
-    pricePerMonth: 2999,
-    employeeLimit: 500,
-    features: [
-      "Up to 500 employees",
-      "Everything in Professional",
-      "Dedicated support",
-      "Custom integrations",
-      "SSO authentication",
-      "SLA guarantee",
-    ],
-    gradient: "from-purple-600 to-pink-600",
-    lightGradient: "from-purple-50 to-pink-50",
-    icon: Shield,
-  },
-];
 
 interface OrganizationData {
   _id: string;
   name: string;
   billingEmail: string;
-  employeeLimit: number;
-  subscriptionStatus: string;
   stripeCustomerId?: string;
-}
-
-interface SubscriptionData {
-  _id: string;
-  plan: string;
-  employeeLimit: number;
-  pricePerMonth: number;
-  status: string;
-  startDate: string;
-  endDate?: string;
-  stripeSubscriptionId: string;
+  purchasedCourses?: string[];
 }
 
 interface BillingHistory {
@@ -141,6 +92,7 @@ interface BillingHistory {
   amount: number;
   status: "paid" | "pending" | "failed";
   invoiceUrl?: string;
+  courseId?: string;
 }
 
 export default function OrganizationBillingPage() {
@@ -153,21 +105,21 @@ export default function OrganizationBillingPage() {
 
   const [organizationData, setOrganizationData] =
     useState<OrganizationData | null>(null);
-  const [subscriptionData, setSubscriptionData] =
-    useState<SubscriptionData | null>(null);
-  const [employeeCount, setEmployeeCount] = useState(0);
+  const [allCourses, setAllCourses] = useState<Course[]>([]);
+  const [purchasedCourses, setPurchasedCourses] = useState<Course[]>([]);
+  const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
   const [billingHistory, setBillingHistory] = useState<BillingHistory[]>([]);
+  const [employeeCount, setEmployeeCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
-  const [showPlanSelection, setShowPlanSelection] = useState(false);
+  const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
+  const [showPurchaseConfirm, setShowPurchaseConfirm] = useState(false);
 
   // Check if user is admin
   const isAdmin =
     membership?.role === "admin" || membership?.role === "org:admin";
 
-  // Memoize fetchOrganizationData using useCallback to fix the dependency warning
   const fetchOrganizationData = useCallback(async () => {
     if (!organization) return;
 
@@ -175,7 +127,13 @@ export default function OrganizationBillingPage() {
       setIsLoading(true);
       setError(null);
 
-      // Fetch organization and subscription data from your API
+      // Fetch courses from Sanity
+      const coursesResponse = await fetch("/api/courses");
+      if (!coursesResponse.ok) throw new Error("Failed to fetch courses");
+      const coursesData = await coursesResponse.json();
+      setAllCourses(coursesData.courses || []);
+
+      // Fetch organization data from your API
       const response = await fetch(
         `/api/organizations/${organization.id}/billing`
       );
@@ -183,9 +141,29 @@ export default function OrganizationBillingPage() {
 
       const data = await response.json();
       setOrganizationData(data.organization);
-      setSubscriptionData(data.subscription);
       setEmployeeCount(data.employeeCount);
       setBillingHistory(data.billingHistory || []);
+
+      // Set up courses based on what's been purchased
+      const purchased = data.organization.purchasedCourses || [];
+      const purchasedList: Course[] = [];
+      const availableList: Course[] = [];
+
+      coursesData.courses.forEach((course: Course) => {
+        if (purchased.includes(course._id)) {
+          purchasedList.push({
+            ...course,
+            purchased: true,
+            purchasedDate: data.coursePurchaseDates?.[course._id],
+            activeUsers: data.courseActiveUsers?.[course._id] || 0,
+          });
+        } else {
+          availableList.push(course);
+        }
+      });
+
+      setPurchasedCourses(purchasedList);
+      setAvailableCourses(availableList);
     } catch (err) {
       console.error("Error fetching organization data:", err);
       setError("Failed to load billing information");
@@ -216,77 +194,38 @@ export default function OrganizationBillingPage() {
     fetchOrganizationData,
   ]);
 
-  // Handle plan selection navigation
-  useEffect(() => {
-    if (showPlanSelection) {
-      // Navigate to plans tab when plan selection is triggered
-      const plansTab = document.querySelector(
-        '[value="plans"]'
-      ) as HTMLButtonElement;
-      if (plansTab) {
-        plansTab.click();
-      }
-      setShowPlanSelection(false);
-    }
-  }, [showPlanSelection]);
-
-  const handlePlanChange = async (newPlanId: string) => {
-    if (!subscriptionData?.stripeSubscriptionId) return;
-
-    try {
-      setIsActionLoading(true);
-      setError(null);
-
-      // If no active subscription, create a new checkout
-      if (subscriptionData.status !== "active") {
-        const { url } = await createOrganizationCheckout({
-          organizationId: organizationData!._id,
-          userId: user!.id,
-          planId: newPlanId as "starter" | "professional" | "enterprise",
-          employeeCount: employeeCount,
-        });
-        if (url) router.push(url);
-        return;
-      }
-
-      // Update existing subscription
-      await updateOrganizationSubscription({
-        subscriptionId: subscriptionData.stripeSubscriptionId,
-        newPlanId: newPlanId as "starter" | "professional" | "enterprise",
-        newEmployeeCount: employeeCount,
-      });
-
-      // Refresh data
-      await fetchOrganizationData();
-    } catch (err) {
-      console.error("Error changing plan:", err);
-      setError(
-        err instanceof Error ? err.message : "Failed to update subscription"
-      );
-    } finally {
-      setIsActionLoading(false);
-    }
+  const handlePurchaseCourse = async (course: Course) => {
+    setSelectedCourse(course);
+    setShowPurchaseConfirm(true);
   };
 
-  const handleCancelSubscription = async () => {
-    if (!subscriptionData?.stripeSubscriptionId) return;
+  const confirmPurchase = async () => {
+    if (!selectedCourse || !organizationData) return;
 
     try {
       setIsActionLoading(true);
       setError(null);
 
-      await cancelOrganizationSubscription(
-        subscriptionData.stripeSubscriptionId
-      );
+      // Use your existing createOrganizationCourseCheckout action
+      const { url } = await createOrganizationCourseCheckout({
+        courseId: selectedCourse._id,
+        courseSlug: selectedCourse.slug?.current || selectedCourse._id,
+        organizationId: organizationData._id, // Pass the Sanity organization ID
+      });
 
-      // Refresh data
-      await fetchOrganizationData();
-      setShowCancelConfirm(false);
+      if (url) {
+        router.push(url);
+      }
     } catch (err) {
-      console.error("Error canceling subscription:", err);
-      setError("Failed to cancel subscription");
+      console.error("Error purchasing course:", err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to initiate purchase. Please try again."
+      );
     } finally {
       setIsActionLoading(false);
+      setShowPurchaseConfirm(false);
     }
   };
 
@@ -295,11 +234,18 @@ export default function OrganizationBillingPage() {
 
     try {
       setIsActionLoading(true);
-      const portalUrl = await getCustomerPortalUrl(
-        organizationData.stripeCustomerId
-      );
-      if (portalUrl) {
-        window.open(portalUrl, "_blank");
+      // Open Stripe customer portal
+      const response = await fetch("/api/organizations/portal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerId: organizationData.stripeCustomerId,
+        }),
+      });
+
+      const { url } = await response.json();
+      if (url) {
+        window.open(url, "_blank");
       }
     } catch (err) {
       console.error("Error opening customer portal:", err);
@@ -317,16 +263,10 @@ export default function OrganizationBillingPage() {
     );
   }
 
-  const currentPlan =
-    SUBSCRIPTION_PLANS.find((plan) => plan.id === subscriptionData?.plan) ||
-    SUBSCRIPTION_PLANS[0];
-
-  const usagePercentage = organizationData
-    ? Math.round((employeeCount / organizationData.employeeLimit) * 100)
-    : 0;
-
-  const isApproachingLimit = usagePercentage >= 80;
-  const isAtLimit = usagePercentage >= 100;
+  const totalInvestment = purchasedCourses.reduce(
+    (sum, course) => sum + (course.organizationPrice || 5000),
+    0
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-950">
@@ -345,24 +285,26 @@ export default function OrganizationBillingPage() {
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-3">
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#FF4A1C]/20 to-[#2A4666]/20 flex items-center justify-center">
-                  <CreditCard className="h-6 w-6 text-[#2A4666]" />
+                  <BookOpen className="h-6 w-6 text-[#2A4666]" />
                 </div>
-                Billing & Subscription
+                Training Courses & Billing
               </h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2">
-                Manage your {organization?.name} subscription and billing
+                Purchase training courses for your {organization?.name} team
               </p>
             </div>
 
-            <Button
-              onClick={handleManageBilling}
-              variant="outline"
-              disabled={isActionLoading || !organizationData?.stripeCustomerId}
-              className="hidden sm:flex items-center gap-2"
-            >
-              <Settings className="h-4 w-4" />
-              Manage in Stripe
-            </Button>
+            {organizationData?.stripeCustomerId && (
+              <Button
+                onClick={handleManageBilling}
+                variant="outline"
+                disabled={isActionLoading}
+                className="hidden sm:flex items-center gap-2"
+              >
+                <Settings className="h-4 w-4" />
+                Billing History
+              </Button>
+            )}
           </div>
         </div>
 
@@ -375,212 +317,34 @@ export default function OrganizationBillingPage() {
         )}
 
         {/* Welcome Message for New Organizations */}
-        {isNewOrg && !subscriptionData && (
+        {isNewOrg && purchasedCourses.length === 0 && (
           <Alert className="mb-6 border-blue-200 bg-blue-50">
             <Sparkles className="h-4 w-4" />
             <AlertTitle>Welcome to Your Organization!</AlertTitle>
             <AlertDescription>
-              Your organization has been created successfully. Purchase a
-              subscription to give your team members access to all training
-              courses.
+              Your organization has been created successfully. Browse our course
+              catalog below to provide your team with essential training.
             </AlertDescription>
           </Alert>
         )}
 
-        <Tabs defaultValue="overview" className="space-y-6">
+        <Tabs defaultValue="catalog" className="space-y-6">
           <TabsList className="grid w-full max-w-md grid-cols-3">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="plans">Plans</TabsTrigger>
-            <TabsTrigger value="history">History</TabsTrigger>
+            <TabsTrigger value="catalog">Course Catalog</TabsTrigger>
+            <TabsTrigger value="purchased">My Courses</TabsTrigger>
+            <TabsTrigger value="history">Billing History</TabsTrigger>
           </TabsList>
 
-          {/* Overview Tab */}
-          <TabsContent value="overview" className="space-y-6">
-            {/* Current Plan Card */}
-            <Card className="overflow-hidden">
-              {!subscriptionData ? (
-                <div className="text-center py-8">
-                  <AlertCircle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">
-                    No Active Subscription
-                  </h3>
-                  <p className="text-gray-600 dark:text-gray-400 mb-6">
-                    Purchase a subscription to give your organization members
-                    access to all courses.
-                  </p>
-                  <Button
-                    onClick={() => setShowPlanSelection(true)}
-                    className="bg-gradient-to-r from-[#FF4A1C] to-[#2A4666]"
-                  >
-                    <CreditCard className="w-4 h-4 mr-2" />
-                    Choose a Plan
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  <div
-                    className={`h-2 bg-gradient-to-r ${currentPlan.gradient}`}
-                  />
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`w-12 h-12 rounded-xl bg-gradient-to-br ${currentPlan.lightGradient} flex items-center justify-center`}
-                        >
-                          <currentPlan.icon className="h-6 w-6 text-[#2A4666]" />
-                        </div>
-                        <div>
-                          <CardTitle className="text-2xl">
-                            {currentPlan.name} Plan
-                          </CardTitle>
-                          <CardDescription>
-                            ${currentPlan.pricePerMonth}/month
-                          </CardDescription>
-                        </div>
-                      </div>
-                      <Badge
-                        variant={
-                          subscriptionData?.status === "active"
-                            ? "default"
-                            : "secondary"
-                        }
-                        className="text-sm"
-                      >
-                        {subscriptionData?.status || "No Subscription"}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    {/* Employee Usage */}
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Employee Seats
-                        </span>
-                        <span
-                          className={`text-sm font-bold ${
-                            isAtLimit
-                              ? "text-red-600"
-                              : isApproachingLimit
-                              ? "text-yellow-600"
-                              : "text-gray-700 dark:text-gray-300"
-                          }`}
-                        >
-                          {employeeCount} of{" "}
-                          {organizationData?.employeeLimit || 0} used
-                        </span>
-                      </div>
-                      <Progress
-                        value={usagePercentage}
-                        className={`h-3 ${
-                          isAtLimit
-                            ? "[&>div]:bg-red-600"
-                            : isApproachingLimit
-                            ? "[&>div]:bg-yellow-600"
-                            : ""
-                        }`}
-                      />
-                      {isApproachingLimit && (
-                        <p className="text-sm text-yellow-600 mt-2 flex items-center gap-1">
-                          <AlertCircle className="h-4 w-4" />
-                          {isAtLimit
-                            ? "Seat limit reached!"
-                            : "Approaching seat limit"}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Plan Features */}
-                    <div>
-                      <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-3">
-                        Your plan includes:
-                      </h4>
-                      <div className="space-y-2">
-                        {currentPlan.features.map((feature, index) => (
-                          <div
-                            key={index}
-                            className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400"
-                          >
-                            <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0" />
-                            <span>{feature}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Billing Period */}
-                    {subscriptionData && (
-                      <div className="pt-4 border-t border-gray-200 dark:border-gray-800">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-gray-600 dark:text-gray-400">
-                            Current period
-                          </span>
-                          <span className="font-medium text-gray-900 dark:text-gray-100">
-                            {new Date(
-                              subscriptionData.startDate
-                            ).toLocaleDateString()}{" "}
-                            -{" "}
-                            {subscriptionData.endDate
-                              ? new Date(
-                                  subscriptionData.endDate
-                                ).toLocaleDateString()
-                              : "Ongoing"}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                  <CardFooter className="bg-gray-50 dark:bg-gray-800/50">
-                    <div className="flex items-center justify-between w-full">
-                      <Button
-                        variant="outline"
-                        onClick={() =>
-                          router.push("/dashboard/organization/invite")
-                        }
-                        className="flex items-center gap-2"
-                      >
-                        <Users className="h-4 w-4" />
-                        Manage Team
-                      </Button>
-                      {subscriptionData?.status === "active" && (
-                        <Button
-                          variant="outline"
-                          onClick={() => setShowCancelConfirm(true)}
-                          className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                        >
-                          Cancel Subscription
-                        </Button>
-                      )}
-                    </div>
-                  </CardFooter>
-                </>
-              )}
-            </Card>
-
-            {/* Quick Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Course Catalog Tab */}
+          <TabsContent value="catalog" className="space-y-6">
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
               <Card>
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                        Monthly Cost
-                      </p>
-                      <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                        ${currentPlan.pricePerMonth}
-                      </p>
-                    </div>
-                    <TrendingUp className="h-8 w-8 text-green-500" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                        Active Users
+                        Team Members
                       </p>
                       <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                         {employeeCount}
@@ -596,15 +360,26 @@ export default function OrganizationBillingPage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                        Cost per User
+                        Courses Purchased
                       </p>
                       <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                        $
-                        {employeeCount > 0
-                          ? Math.round(
-                              currentPlan.pricePerMonth / employeeCount
-                            )
-                          : 0}
+                        {purchasedCourses.length}
+                      </p>
+                    </div>
+                    <BookOpen className="h-8 w-8 text-green-500" />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                        Total Investment
+                      </p>
+                      <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                        ${totalInvestment.toLocaleString()}
                       </p>
                     </div>
                     <CreditCard className="h-8 w-8 text-purple-500" />
@@ -612,151 +387,254 @@ export default function OrganizationBillingPage() {
                 </CardContent>
               </Card>
             </div>
-          </TabsContent>
 
-          {/* Plans Tab */}
-          <TabsContent value="plans" className="space-y-6">
-            <div className="text-center mb-8">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                Choose the Right Plan for Your Team
+            {/* Available Courses */}
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">
+                Available Courses
               </h2>
-              <p className="text-gray-600 dark:text-gray-400">
-                Upgrade or downgrade at any time. Changes take effect
-                immediately.
-              </p>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {SUBSCRIPTION_PLANS.map((plan) => {
-                const isCurrentPlan = plan.id === currentPlan.id;
-                const isUpgrade =
-                  plan.pricePerMonth > currentPlan.pricePerMonth;
-
-                return (
-                  <div
-                    key={plan.id}
-                    className={`group relative ${
-                      plan.popular ? "md:-mt-4" : ""
-                    }`}
-                  >
-                    {plan.popular && (
-                      <div className="absolute -top-4 left-0 right-0 flex justify-center">
-                        <Badge className="bg-gradient-to-r from-[#FF4A1C] to-[#2A4666] text-white">
-                          <Sparkles className="h-3 w-3 mr-1" />
-                          Most Popular
-                        </Badge>
-                      </div>
-                    )}
-
+              {availableCourses.length === 0 ? (
+                <Card>
+                  <CardContent className="p-8 text-center">
+                    <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">
+                      All Courses Purchased!
+                    </h3>
+                    <p className="text-gray-600 dark:text-gray-400">
+                      Your organization has access to all available courses.
+                      Check back later for new training programs.
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid grid-cols-1 gap-6">
+                  {availableCourses.map((course) => (
                     <Card
-                      className={`h-full transition-all duration-300 hover:shadow-xl ${
-                        isCurrentPlan
-                          ? "ring-2 ring-[#FF4A1C] shadow-lg"
-                          : "hover:-translate-y-1"
-                      } ${plan.popular ? "border-[#FF4A1C]/20" : ""}`}
+                      key={course._id}
+                      className="overflow-hidden hover:shadow-lg transition-shadow"
                     >
-                      <CardHeader className="text-center pb-8">
-                        <div
-                          className={`inline-flex p-4 rounded-2xl bg-gradient-to-br ${plan.lightGradient} mx-auto mb-4`}
-                        >
-                          <plan.icon className="h-8 w-8 text-[#2A4666]" />
+                      <div className="h-2 bg-gradient-to-r from-[#FF4A1C] to-[#2A4666]" />
+                      <CardHeader>
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <CardTitle className="text-2xl mb-2">
+                              {course.title}
+                            </CardTitle>
+                            <CardDescription className="text-base">
+                              {course.description}
+                            </CardDescription>
+                          </div>
+                          <div className="text-right ml-4">
+                            <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+                              $
+                              {(
+                                course.organizationPrice || 5000
+                              ).toLocaleString()}
+                            </p>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">
+                              One-time purchase
+                            </p>
+                          </div>
                         </div>
-                        <CardTitle className="text-2xl">{plan.name}</CardTitle>
-                        <div className="mt-4">
-                          <span className="text-4xl font-bold">
-                            ${plan.pricePerMonth}
-                          </span>
-                          <span className="text-gray-600 dark:text-gray-400">
-                            /month
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                          Up to {plan.employeeLimit} employees
-                        </p>
                       </CardHeader>
 
                       <CardContent className="space-y-4">
-                        <ul className="space-y-3">
-                          {plan.features.map((feature, index) => (
-                            <li
-                              key={index}
-                              className="flex items-start gap-2 text-sm"
-                            >
-                              <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
-                              <span className="text-gray-700 dark:text-gray-300">
-                                {feature}
+                        <div className="flex items-center gap-6 text-sm">
+                          {course.modules && course.modules.length > 0 && (
+                            <div className="flex items-center gap-2">
+                              <PlayCircle className="h-4 w-4 text-gray-500" />
+                              <span>{course.modules.length} Modules</span>
+                            </div>
+                          )}
+                          {course.level && (
+                            <div className="flex items-center gap-2">
+                              <Award className="h-4 w-4 text-gray-500" />
+                              <span>
+                                {course.level
+                                  .replace("-", " ")
+                                  .replace(/\b\w/g, (l) => l.toUpperCase())}
                               </span>
-                            </li>
-                          ))}
-                        </ul>
+                            </div>
+                          )}
+                        </div>
+
+                        {course.learningObjectives &&
+                          course.learningObjectives.length > 0 && (
+                            <div>
+                              <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-3">
+                                What You'll Learn:
+                              </h4>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                {course.learningObjectives
+                                  .slice(0, 6)
+                                  .map((objective, index) => (
+                                    <div
+                                      key={index}
+                                      className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400"
+                                    >
+                                      <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0" />
+                                      <span>{objective}</span>
+                                    </div>
+                                  ))}
+                              </div>
+                            </div>
+                          )}
+
+                        {course.requirements &&
+                          course.requirements.length > 0 && (
+                            <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+                              <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-1">
+                                Requirements:
+                              </p>
+                              <p className="text-sm text-amber-700 dark:text-amber-300">
+                                {course.requirements.join(", ")}
+                              </p>
+                            </div>
+                          )}
+
+                        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                          <p className="text-sm text-blue-800 dark:text-blue-200">
+                            <strong>Unlimited Access:</strong> Once purchased,
+                            your entire team of {employeeCount} members will
+                            have permanent access to this course.
+                          </p>
+                        </div>
                       </CardContent>
 
                       <CardFooter>
                         <Button
-                          onClick={() => handlePlanChange(plan.id)}
-                          disabled={isCurrentPlan || isActionLoading}
-                          className={`w-full ${
-                            isCurrentPlan
-                              ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                              : plan.popular
-                              ? "bg-gradient-to-r from-[#FF4A1C] to-[#2A4666] hover:from-[#FF4A1C]/90 hover:to-[#2A4666]/90 text-white"
-                              : ""
-                          }`}
-                          variant={
-                            !isCurrentPlan && !plan.popular
-                              ? "outline"
-                              : "default"
-                          }
+                          onClick={() => handlePurchaseCourse(course)}
+                          disabled={isActionLoading}
+                          className="w-full bg-gradient-to-r from-[#FF4A1C] to-[#2A4666] hover:from-[#FF4A1C]/90 hover:to-[#2A4666]/90"
                         >
-                          {isCurrentPlan ? (
-                            <>
-                              <CheckCircle className="h-4 w-4 mr-2" />
-                              Current Plan
-                            </>
-                          ) : isUpgrade ? (
-                            <>
-                              <ArrowUpRight className="h-4 w-4 mr-2" />
-                              Upgrade
-                            </>
-                          ) : (
-                            <>
-                              <ArrowDownRight className="h-4 w-4 mr-2" />
-                              Downgrade
-                            </>
-                          )}
+                          <ShoppingCart className="h-4 w-4 mr-2" />
+                          Purchase Course for Team
                         </Button>
                       </CardFooter>
                     </Card>
-                  </div>
-                );
-              })}
+                  ))}
+                </div>
+              )}
             </div>
-
-            {/* Contact for Custom Plans */}
-            <Card className="mt-8">
-              <CardContent className="p-8 text-center">
-                <Building2 className="h-12 w-12 text-[#2A4666] mx-auto mb-4" />
-                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                  Need a Custom Plan?
-                </h3>
-                <p className="text-gray-600 dark:text-gray-400 mb-4">
-                  For teams larger than 500 or with special requirements
-                </p>
-                <Button variant="outline" asChild>
-                  <Link href="/contact-sales">
-                    Contact Sales
-                    <ChevronRight className="h-4 w-4 ml-2" />
-                  </Link>
-                </Button>
-              </CardContent>
-            </Card>
           </TabsContent>
 
-          {/* History Tab */}
+          {/* Purchased Courses Tab */}
+          <TabsContent value="purchased" className="space-y-6">
+            {purchasedCourses.length === 0 ? (
+              <Card>
+                <CardContent className="p-8 text-center">
+                  <BookOpen className="h-12 w-12 text-gray-300 dark:text-gray-700 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">No Courses Yet</h3>
+                  <p className="text-gray-600 dark:text-gray-400 mb-4">
+                    Purchase courses from the catalog to give your team access
+                    to training.
+                  </p>
+                  <Button
+                    onClick={() => {
+                      const catalogTab = document.querySelector(
+                        '[value="catalog"]'
+                      ) as HTMLButtonElement;
+                      if (catalogTab) catalogTab.click();
+                    }}
+                    className="bg-gradient-to-r from-[#FF4A1C] to-[#2A4666]"
+                  >
+                    Browse Course Catalog
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 gap-6">
+                {purchasedCourses.map((course) => (
+                  <Card key={course._id} className="overflow-hidden">
+                    <div className="h-2 bg-gradient-to-r from-green-500 to-emerald-500" />
+                    <CardHeader>
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <CardTitle className="text-xl flex items-center gap-2">
+                            {course.title}
+                            <Badge className="bg-green-100 text-green-800">
+                              Active
+                            </Badge>
+                          </CardTitle>
+                          <CardDescription>
+                            Purchased on{" "}
+                            {course.purchasedDate
+                              ? new Date(
+                                  course.purchasedDate
+                                ).toLocaleDateString()
+                              : "N/A"}
+                          </CardDescription>
+                        </div>
+                        <CheckCircle className="h-6 w-6 text-green-500" />
+                      </div>
+                    </CardHeader>
+
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="text-center p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                            {course.activeUsers || 0}
+                          </p>
+                          <p className="text-xs text-gray-600 dark:text-gray-400">
+                            Active Learners
+                          </p>
+                        </div>
+                        <div className="text-center p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                            {employeeCount}
+                          </p>
+                          <p className="text-xs text-gray-600 dark:text-gray-400">
+                            Total Access
+                          </p>
+                        </div>
+                        <div className="text-center p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                            ∞
+                          </p>
+                          <p className="text-xs text-gray-600 dark:text-gray-400">
+                            Lifetime Access
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <Button
+                          onClick={() =>
+                            router.push(
+                              `/courses/${course.slug?.current || course._id}`
+                            )
+                          }
+                          className="flex-1"
+                        >
+                          <PlayCircle className="h-4 w-4 mr-2" />
+                          View Course
+                        </Button>
+                        <Button
+                          onClick={() =>
+                            router.push(
+                              `/dashboard/organization/course-progress/${course._id}`
+                            )
+                          }
+                          variant="outline"
+                          className="flex-1"
+                        >
+                          <Users className="h-4 w-4 mr-2" />
+                          Team Progress
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Billing History Tab */}
           <TabsContent value="history" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Billing History</CardTitle>
+                <CardTitle>Purchase History</CardTitle>
                 <CardDescription>
                   View and download your past invoices
                 </CardDescription>
@@ -766,7 +644,7 @@ export default function OrganizationBillingPage() {
                   <div className="text-center py-8">
                     <Receipt className="h-12 w-12 text-gray-300 dark:text-gray-700 mx-auto mb-4" />
                     <p className="text-gray-500 dark:text-gray-400">
-                      No billing history yet
+                      No purchases yet
                     </p>
                   </div>
                 ) : (
@@ -807,7 +685,7 @@ export default function OrganizationBillingPage() {
                           <div className="flex items-center gap-4">
                             <div className="text-right">
                               <p className="font-bold text-gray-900 dark:text-gray-100">
-                                ${item.amount.toFixed(2)}
+                                ${item.amount.toLocaleString()}
                               </p>
                               <Badge
                                 variant={
@@ -872,54 +750,63 @@ export default function OrganizationBillingPage() {
           </TabsContent>
         </Tabs>
 
-        {/* Cancel Confirmation Dialog */}
-        {showCancelConfirm && (
+        {/* Purchase Confirmation Dialog */}
+        {showPurchaseConfirm && selectedCourse && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
             <Card className="max-w-md">
               <CardHeader>
-                <CardTitle>Cancel Subscription?</CardTitle>
+                <CardTitle>Confirm Purchase</CardTitle>
                 <CardDescription>
-                  Your subscription will remain active until the end of the
-                  current billing period. You can resubscribe at any time.
+                  You're about to purchase training for your entire organization
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Your team will lose access to:
-                </p>
-                <ul className="mt-2 space-y-1">
-                  {currentPlan.features.slice(0, 3).map((feature, index) => (
-                    <li
-                      key={index}
-                      className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400"
-                    >
-                      <XCircle className="h-4 w-4 text-red-500" />
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
+              <CardContent className="space-y-4">
+                <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                  <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">
+                    {selectedCourse.title}
+                  </h4>
+                  <div className="space-y-1 text-sm text-gray-600 dark:text-gray-400">
+                    <p>• Access for all {employeeCount} team members</p>
+                    <p>• Lifetime access to course content</p>
+                    <p>• Progress tracking and certificates</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-4 border-t">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                    Total Cost:
+                  </span>
+                  <span className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                    $
+                    {(
+                      selectedCourse.organizationPrice || 5000
+                    ).toLocaleString()}
+                  </span>
+                </div>
               </CardContent>
               <CardFooter className="flex gap-3">
                 <Button
                   variant="outline"
-                  onClick={() => setShowCancelConfirm(false)}
+                  onClick={() => setShowPurchaseConfirm(false)}
                   className="flex-1"
                 >
-                  Keep Subscription
+                  Cancel
                 </Button>
                 <Button
-                  variant="destructive"
-                  onClick={handleCancelSubscription}
+                  onClick={confirmPurchase}
                   disabled={isActionLoading}
-                  className="flex-1"
+                  className="flex-1 bg-gradient-to-r from-[#FF4A1C] to-[#2A4666]"
                 >
                   {isActionLoading ? (
                     <>
                       <Loader className="h-4 w-4 mr-2" />
-                      Canceling...
+                      Processing...
                     </>
                   ) : (
-                    "Cancel Subscription"
+                    <>
+                      <CreditCard className="h-4 w-4 mr-2" />
+                      Confirm Purchase
+                    </>
                   )}
                 </Button>
               </CardFooter>

@@ -1,3 +1,6 @@
+// app/api/validate-invitation/route.ts
+// THIS FILE MUST BE AT EXACTLY THIS PATH
+
 import { NextRequest, NextResponse } from "next/server";
 import { clerkClient } from "@clerk/nextjs/server";
 

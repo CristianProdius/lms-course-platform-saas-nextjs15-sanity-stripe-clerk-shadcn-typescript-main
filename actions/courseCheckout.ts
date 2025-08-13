@@ -149,9 +149,7 @@ export async function createIndividualCourseCheckout({
         },
       ],
       mode: "payment",
-      success_url: `${baseUrl}/courses/${
-        courseSlug || course.slug
-      }?purchase=success`,
+      success_url: `${baseUrl}/dashboard?purchase=success&type=individual&courseId=${courseId}`,
       cancel_url: `${baseUrl}/courses/${
         courseSlug || course.slug
       }?purchase=cancelled`,
@@ -339,7 +337,7 @@ export async function createOrganizationCourseCheckout({
         },
       ],
       mode: "payment",
-      success_url: `${baseUrl}/dashboard/organization/courses?purchase=success&courseId=${courseId}`,
+      success_url: `${baseUrl}/dashboard/admin?purchase=success&type=organization&courseId=${courseId}`,
       cancel_url: `${baseUrl}/courses/${
         courseSlug || course.slug
       }?purchase=cancelled`,

@@ -343,7 +343,7 @@ export default async function AdminDashboardPage() {
               </p>
             </div>
             <Button variant="outline" size="sm" asChild>
-              <Link href="/dashboard/billing">Manage Billing</Link>
+              <Link href="/dashboard/organization/billing">Manage Billing</Link>
             </Button>
           </div>
         )}

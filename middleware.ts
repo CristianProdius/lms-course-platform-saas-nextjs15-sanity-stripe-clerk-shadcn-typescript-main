@@ -1,3 +1,4 @@
+// middleware.ts
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 // Define public routes that don't require authentication
@@ -6,8 +7,12 @@ const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)", // Catch-all for sign-in routes
   "/sign-up(.*)", // Catch-all for sign-up routes
   "/employee-join(.*)", // Employee invitation routes
+  "/api/validate-invitation", // ADD THIS - Invitation validation endpoint
+  "/api/accept-org-invitation", // ADD THIS - Accept invitation endpoint
+  "/api/link-user-to-organization", // ADD THIS - Link user to org endpoint
   "/api/webhook(.*)", // Webhook endpoints
   "/api/clerk-webhook(.*)", // Clerk webhook
+  "/api/stripe-checkout/webhook", // Stripe webhook
   "/studio(.*)", // Sanity Studio
 ]);
 
