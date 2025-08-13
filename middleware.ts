@@ -1,6 +1,22 @@
-import { clerkMiddleware } from "@clerk/nextjs/server";
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
-export default clerkMiddleware({});
+// Define public routes that don't require authentication
+const isPublicRoute = createRouteMatcher([
+  "/",
+  "/sign-in(.*)", // Catch-all for sign-in routes
+  "/sign-up(.*)", // Catch-all for sign-up routes
+  "/employee-join(.*)", // Employee invitation routes
+  "/api/webhook(.*)", // Webhook endpoints
+  "/api/clerk-webhook(.*)", // Clerk webhook
+  "/studio(.*)", // Sanity Studio
+]);
+
+export default clerkMiddleware(async (auth, request) => {
+  // Protect all routes except public ones
+  if (!isPublicRoute(request)) {
+    await auth.protect();
+  }
+});
 
 export const config = {
   matcher: [
