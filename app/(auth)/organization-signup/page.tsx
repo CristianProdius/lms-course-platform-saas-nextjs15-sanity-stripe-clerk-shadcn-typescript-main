@@ -2,370 +2,305 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useOrganizationList, useUser } from "@clerk/nextjs";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Loader } from "@/components/ui/loader";
-import {
-  Building2,
-  Mail,
-  Users,
-  ArrowRight,
-  CheckCircle,
-  AlertCircle,
-  Sparkles,
-} from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
-
-const companySizes = [
-  { value: "1-10", label: "1-10 employees", limit: 10 },
-  { value: "11-50", label: "11-50 employees", limit: 50 },
-  { value: "51-200", label: "51-200 employees", limit: 200 },
-  { value: "201-500", label: "201-500 employees", limit: 500 },
-  { value: "500+", label: "500+ employees", limit: 1000 },
-];
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Building2, Mail, Lock, User, ArrowLeft } from "lucide-react";
+import { signUp } from "@/lib/auth-client";
 
 export default function OrganizationSignupPage() {
-  const router = useRouter();
-  const { user, isLoaded: isUserLoaded } = useUser();
-  const {
-    createOrganization,
-    setActive,
-    isLoaded: isOrgLoaded,
-  } = useOrganizationList();
-
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     organizationName: "",
-    companySize: "",
-    billingEmail: user?.primaryEmailAddress?.emailAddress || "",
+    adminEmail: "",
+    adminPassword: "",
+    adminName: "",
+    confirmPassword: "",
   });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [step, setStep] = useState<"organization" | "admin">("organization");
+  const router = useRouter();
 
-  // Redirect if user is not authenticated
-  if (isUserLoaded && !user) {
-    router.push("/sign-in");
-    return null;
-  }
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({
+      ...prev,
+      [e.target.name]: e.target.value
+    }));
+    setError("");
+  };
 
-  // Show loading state
-  if (!isUserLoaded || !isOrgLoaded) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader size="lg" />
-      </div>
-    );
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleOrganizationSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setIsSubmitting(true);
+    if (!formData.organizationName.trim()) {
+      setError("Organization name is required");
+      return;
+    }
+    setStep("admin");
+  };
+
+  const handleAdminSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    // Validation
+    if (!formData.adminName.trim()) {
+      setError("Admin name is required");
+      return;
+    }
+    if (!formData.adminEmail.trim()) {
+      setError("Admin email is required");
+      return;
+    }
+    if (!formData.adminPassword) {
+      setError("Password is required");
+      return;
+    }
+    if (formData.adminPassword !== formData.confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+    if (formData.adminPassword.length < 8) {
+      setError("Password must be at least 8 characters long");
+      return;
+    }
 
     try {
-      // Validate form
-      if (!formData.organizationName.trim()) {
-        throw new Error("Organization name is required");
-      }
-      if (!formData.companySize) {
-        throw new Error("Please select company size");
-      }
-      if (!formData.billingEmail.trim()) {
-        throw new Error("Billing email is required");
-      }
-
-      // Create organization in Clerk
-      const organization = await createOrganization({
-        name: formData.organizationName,
+      setLoading(true);
+      
+      // First create the admin user account
+      const signUpResult = await signUp.email({
+        email: formData.adminEmail,
+        password: formData.adminPassword,
+        name: formData.adminName,
       });
 
-      if (!organization) {
-        throw new Error("Failed to create organization");
+      if (signUpResult.error) {
+        setError(signUpResult.error.message || "Failed to create admin account");
+        return;
       }
 
-      // Get employee limit based on company size
-      const selectedSize = companySizes.find(
-        (size) => size.value === formData.companySize
-      );
-      const employeeLimit = selectedSize?.limit || 10;
-
-      // Create organization in Sanity
-      const response = await fetch("/api/organizations/create", {
+      // Then create the organization via API
+      const orgResponse = await fetch("/api/organizations/create", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
           name: formData.organizationName,
-          billingEmail: formData.billingEmail,
-          employeeLimit,
-          clerkOrgId: organization.id,
-          adminUserId: user?.id,
+          adminEmail: formData.adminEmail,
         }),
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to create organization record");
+      const orgResult = await orgResponse.json();
+
+      if (!orgResult.success) {
+        setError(orgResult.error || "Failed to create organization");
+        return;
       }
 
-      // Set the organization as active if setActive is available
-      if (setActive) {
-        await setActive({ organization: organization.id });
-      }
+      // Redirect to sign in page with success message
+      router.push("/sign-in?message=Organization created successfully. Please sign in to continue.");
 
-      // Redirect to subscription selection
-      router.push("/dashboard/organization/billing?newOrg=true");
     } catch (err) {
-      console.error("Error creating organization:", err);
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      console.error("Organization signup error:", err);
+      setError("An unexpected error occurred. Please try again.");
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen relative overflow-hidden bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-950">
-      {/* Background Elements */}
-      <div className="absolute inset-0">
-        <div className="absolute top-20 left-10 w-72 h-72 bg-gradient-to-br from-[#FF4A1C]/10 to-[#2A4666]/10 rounded-full blur-3xl animate-pulse-slow" />
-        <div className="absolute bottom-20 right-10 w-96 h-96 bg-gradient-to-br from-[#2A4666]/10 to-[#FF4A1C]/10 rounded-full blur-3xl animate-pulse-slow animation-delay-2000" />
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-950">
+      {/* Background decoration */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-[#FF4A1C]/10 to-[#2A4666]/10 rounded-full blur-3xl" />
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-br from-[#2A4666]/10 to-[#FF4A1C]/10 rounded-full blur-3xl" />
       </div>
 
-      <div className="relative container mx-auto px-4 py-16">
-        <div className="max-w-2xl mx-auto">
-          {/* Header */}
-          <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#FF4A1C]/10 to-[#2A4666]/10 backdrop-blur-sm border border-[#FF4A1C]/20 rounded-full mb-6">
-              <Sparkles className="w-4 h-4 text-[#FF4A1C]" />
-              <span className="text-sm font-medium bg-gradient-to-r from-[#FF4A1C] to-[#2A4666] bg-clip-text text-transparent">
-                Transform Your Team with AI
-              </span>
-            </div>
-
-            <h1 className="text-4xl sm:text-5xl font-bold mb-4">
-              <span className="bg-gradient-to-r from-[#2A4666] to-[#FF4A1C] bg-clip-text text-transparent">
-                Create Your Organization
-              </span>
-            </h1>
-            <p className="text-lg text-gray-600 dark:text-gray-400">
-              Set up your company account to start training your entire team
-            </p>
+      <div className="relative z-10 container mx-auto px-4 py-8 flex items-center justify-center min-h-screen">
+        <div className="w-full max-w-md">
+          {/* Logo */}
+          <div className="text-center mb-8">
+            <Link href="/" className="inline-block">
+              <Image
+                src="/image.png"
+                alt="Precuity AI Logo"
+                width={120}
+                height={48}
+                className="h-12 w-auto mx-auto"
+              />
+            </Link>
           </div>
 
-          {/* Main Card */}
           <Card className="shadow-xl border-gray-200 dark:border-gray-800">
-            <CardHeader className="space-y-1 pb-8">
-              <CardTitle className="text-2xl flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#FF4A1C]/20 to-[#2A4666]/20 flex items-center justify-center">
-                  <Building2 className="h-5 w-5 text-[#2A4666]" />
-                </div>
-                Company Information
+            <CardHeader className="text-center">
+              <div className="w-16 h-16 bg-gradient-to-br from-[#FF4A1C]/20 to-[#2A4666]/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Building2 className="h-8 w-8 text-[#FF4A1C]" />
+              </div>
+              <CardTitle className="text-2xl">
+                {step === "organization" ? "Create Organization" : "Setup Admin Account"}
               </CardTitle>
               <CardDescription>
-                We&apos;ll use this to set up your team workspace
+                {step === "organization" 
+                  ? "Enter your organization details to get started"
+                  : "Create an admin account for your organization"
+                }
               </CardDescription>
             </CardHeader>
-
-            <CardContent>
-              {error && (
-                <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-3">
-                  <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-red-800 dark:text-red-200">
-                    {error}
-                  </p>
-                </div>
-              )}
-
-              <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Organization Name */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Organization Name
-                  </label>
-                  <div className="relative">
-                    <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                    <input
+            
+            <CardContent className="space-y-6">
+              {step === "organization" ? (
+                <form onSubmit={handleOrganizationSubmit} className="space-y-4">
+                  <div>
+                    <Label htmlFor="organizationName">Organization Name</Label>
+                    <Input
+                      id="organizationName"
+                      name="organizationName"
                       type="text"
+                      placeholder="Enter your organization name"
                       value={formData.organizationName}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          organizationName: e.target.value,
-                        })
-                      }
-                      placeholder="Acme Corporation"
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF4A1C] focus:border-transparent dark:bg-gray-800 dark:text-gray-100"
+                      onChange={handleInputChange}
+                      disabled={loading}
                       required
                     />
                   </div>
-                </div>
 
-                {/* Company Size */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Company Size
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {companySizes.map((size) => (
-                      <button
-                        key={size.value}
-                        type="button"
-                        onClick={() =>
-                          setFormData({ ...formData, companySize: size.value })
-                        }
-                        className={`p-4 rounded-lg border-2 transition-all duration-200 ${
-                          formData.companySize === size.value
-                            ? "border-[#FF4A1C] bg-[#FF4A1C]/5"
-                            : "border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600"
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Users
-                            className={`h-5 w-5 ${
-                              formData.companySize === size.value
-                                ? "text-[#FF4A1C]"
-                                : "text-gray-400"
-                            }`}
-                          />
-                          <span
-                            className={`font-medium ${
-                              formData.companySize === size.value
-                                ? "text-[#FF4A1C]"
-                                : "text-gray-700 dark:text-gray-300"
-                            }`}
-                          >
-                            {size.label}
-                          </span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Billing Email */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Billing Email
-                  </label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                    <input
-                      type="email"
-                      value={formData.billingEmail}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          billingEmail: e.target.value,
-                        })
-                      }
-                      placeholder="billing@company.com"
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF4A1C] focus:border-transparent dark:bg-gray-800 dark:text-gray-100"
-                      required
-                    />
-                  </div>
-                  <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                    We&apos;ll send invoices and billing notifications to this
-                    email
-                  </p>
-                </div>
-
-                {/* Benefits List */}
-                <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-6 space-y-3">
-                  <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                    What&apos;s included:
-                  </h3>
-                  {[
-                    "Team dashboard & progress tracking",
-                    "Bulk user management",
-                    "Priority support",
-                    "Custom onboarding session",
-                  ].map((benefit, index) => (
-                    <div key={index} className="flex items-center gap-3">
-                      <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0" />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">
-                        {benefit}
-                      </span>
+                  {error && (
+                    <div className="text-sm text-red-600 bg-red-50 dark:bg-red-900/20 p-3 rounded-md border border-red-200 dark:border-red-800">
+                      {error}
                     </div>
-                  ))}
-                </div>
+                  )}
 
-                {/* Submit Button */}
-                <div className="flex flex-col sm:flex-row gap-4 pt-6">
-                  <Button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="flex-1 bg-gradient-to-r from-[#FF4A1C] to-[#2A4666] hover:from-[#FF4A1C]/90 hover:to-[#2A4666]/90 text-white rounded-lg px-6 py-3 font-semibold shadow-lg hover:shadow-xl transition-all duration-300"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader className="h-5 w-5 mr-2" />
-                        Creating Organization...
-                      </>
-                    ) : (
-                      <>
-                        Continue to Courses Selection
-                        <ArrowRight className="h-5 w-5 ml-2" />
-                      </>
-                    )}
+                  <Button type="submit" className="w-full">
+                    Continue to Admin Setup
                   </Button>
+                </form>
+              ) : (
+                <form onSubmit={handleAdminSubmit} className="space-y-4">
+                  <div>
+                    <Label htmlFor="adminName">Full Name</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                      <Input
+                        id="adminName"
+                        name="adminName"
+                        type="text"
+                        placeholder="Enter your full name"
+                        value={formData.adminName}
+                        onChange={handleInputChange}
+                        disabled={loading}
+                        className="pl-10"
+                        required
+                      />
+                    </div>
+                  </div>
 
-                  <Link href="/my-courses">
+                  <div>
+                    <Label htmlFor="adminEmail">Admin Email</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                      <Input
+                        id="adminEmail"
+                        name="adminEmail"
+                        type="email"
+                        placeholder="admin@yourcompany.com"
+                        value={formData.adminEmail}
+                        onChange={handleInputChange}
+                        disabled={loading}
+                        className="pl-10"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="adminPassword">Password</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                      <Input
+                        id="adminPassword"
+                        name="adminPassword"
+                        type="password"
+                        placeholder="Minimum 8 characters"
+                        value={formData.adminPassword}
+                        onChange={handleInputChange}
+                        disabled={loading}
+                        className="pl-10"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="confirmPassword">Confirm Password</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                      <Input
+                        id="confirmPassword"
+                        name="confirmPassword"
+                        type="password"
+                        placeholder="Confirm your password"
+                        value={formData.confirmPassword}
+                        onChange={handleInputChange}
+                        disabled={loading}
+                        className="pl-10"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {error && (
+                    <div className="text-sm text-red-600 bg-red-50 dark:bg-red-900/20 p-3 rounded-md border border-red-200 dark:border-red-800">
+                      {error}
+                    </div>
+                  )}
+
+                  <div className="flex gap-3">
                     <Button
                       type="button"
                       variant="outline"
-                      className="w-full sm:w-auto border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+                      onClick={() => setStep("organization")}
+                      disabled={loading}
+                      className="flex-1"
                     >
-                      Skip for now
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      Back
                     </Button>
-                  </Link>
-                </div>
-              </form>
+                    <Button
+                      type="submit"
+                      disabled={loading}
+                      className="flex-1"
+                    >
+                      {loading ? "Creating..." : "Create Organization"}
+                    </Button>
+                  </div>
+                </form>
+              )}
+
+              <div className="border-t border-gray-200 dark:border-gray-700 pt-4 text-center">
+                <Link 
+                  href="/sign-in"
+                  className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+                >
+                  Already have an organization account? Sign in
+                </Link>
+              </div>
             </CardContent>
           </Card>
 
-          {/* Footer Note */}
-          <p className="text-center text-sm text-gray-500 dark:text-gray-400 mt-8">
-            By creating an organization, you agree to our{" "}
-            <Link href="/terms" className="text-[#FF4A1C] hover:underline">
-              Terms of Service
-            </Link>{" "}
-            and{" "}
-            <Link href="/privacy" className="text-[#FF4A1C] hover:underline">
-              Privacy Policy
+          <div className="mt-6 text-center">
+            <Link 
+              href="/"
+              className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+            >
+              ← Back to homepage
             </Link>
-          </p>
+          </div>
         </div>
       </div>
-
-      {/* Custom animations */}
-      <style jsx>{`
-        @keyframes pulse-slow {
-          0%,
-          100% {
-            opacity: 0.1;
-            transform: scale(1);
-          }
-          50% {
-            opacity: 0.2;
-            transform: scale(1.05);
-          }
-        }
-
-        .animate-pulse-slow {
-          animation: pulse-slow 4s ease-in-out infinite;
-        }
-
-        .animation-delay-2000 {
-          animation-delay: 2000ms;
-        }
-      `}</style>
     </div>
   );
 }

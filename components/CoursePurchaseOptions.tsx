@@ -1,8 +1,7 @@
-// components/CoursePurchaseOptions.tsx
 "use client";
 
 import { useState } from "react";
-import { useOrganization } from "@clerk/nextjs";
+import { useUser, useOrganization } from "@/lib/auth-client";
 import {
   Building2,
   User,
@@ -18,10 +17,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import {
-  createIndividualCourseCheckout,
-  createOrganizationCourseCheckout,
-} from "@/actions/courseCheckout";
+import { createIndividualCourseCheckout } from "@/actions/createIndividualCourseCheckout";
+import { createOrganizationCourseCheckout } from "@/actions/createOrganizationCourseCheckout";
 
 interface CoursePurchaseOptionsProps {
   courseId: string;
@@ -48,15 +45,30 @@ export default function CoursePurchaseOptions({
   organizationPrice = 5000,
   isFree = false,
 }: CoursePurchaseOptionsProps) {
-  const { organization, membership } = useOrganization();
+  const { data: user, loading: userLoading } = useUser();
+  const { organization, isAdmin, loading: orgLoading } = useOrganization();
   const [selectedOption, setSelectedOption] = useState<
     "individual" | "organization"
-  >("individual");
+  >("organization"); // Default to organization since that's the primary model
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isOrgAdmin =
-    membership?.role === "admin" || membership?.role === "org:admin";
+  const loading = userLoading || orgLoading;
+
+  // If still loading user/org data
+  if (loading) {
+    return (
+      <Card className="animate-pulse">
+        <CardContent className="pt-6">
+          <div className="space-y-4">
+            <div className="h-8 bg-gray-200 rounded w-3/4 mx-auto" />
+            <div className="h-4 bg-gray-200 rounded w-1/2 mx-auto" />
+            <div className="h-12 bg-gray-200 rounded" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   // If user already has access, show access badge
   if (hasAccess) {
@@ -73,10 +85,8 @@ export default function CoursePurchaseOptions({
               </h3>
               <p className="text-sm lg:text-base text-gray-600 mt-2">
                 {accessType === "organization"
-                  ? `Access provided by ${
-                      organizationName || "your organization"
-                    }`
-                  : "You purchased individual access"}
+                  ? `Access provided by ${organizationName || "your organization"}`
+                  : "You have access to this course"}
               </p>
             </div>
             <Button
@@ -121,14 +131,14 @@ export default function CoursePurchaseOptions({
   };
 
   const handleOrganizationPurchase = async () => {
-    if (!organization || !organizationId) {
+    if (!organization) {
       setError(
         "You need to be part of an organization to purchase for your team"
       );
       return;
     }
 
-    if (!isOrgAdmin) {
+    if (!isAdmin) {
       setError("Only organization admins can make purchases for the team");
       return;
     }
@@ -140,7 +150,7 @@ export default function CoursePurchaseOptions({
       const result = await createOrganizationCourseCheckout({
         courseId,
         courseSlug,
-        organizationId,
+        organizationId: organization.id,
       });
 
       if (result.url) {
@@ -173,7 +183,7 @@ export default function CoursePurchaseOptions({
             <Button
               size="lg"
               className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-semibold shadow-lg"
-              onClick={handleIndividualPurchase}
+              onClick={organization ? handleOrganizationPurchase : handleIndividualPurchase}
               disabled={isLoading}
             >
               {isLoading ? (
@@ -188,6 +198,46 @@ export default function CoursePurchaseOptions({
                 </>
               )}
             </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // If no user session
+  if (!user) {
+    return (
+      <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 shadow-xl">
+        <CardContent className="pt-6">
+          <div className="text-center space-y-4">
+            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center mx-auto shadow-lg">
+              <User className="w-10 h-10 text-white" />
+            </div>
+            <div>
+              <h3 className="text-xl lg:text-2xl font-bold text-gray-900">
+                Sign in to purchase
+              </h3>
+              <p className="text-sm lg:text-base text-gray-600 mt-2">
+                Create an account or sign in to access this course
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button
+                className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold shadow-lg"
+                size="lg"
+                onClick={() => window.location.href = "/sign-in"}
+              >
+                Sign In
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1 border-blue-300 text-blue-700 hover:bg-blue-50"
+                size="lg"
+                onClick={() => window.location.href = "/sign-up"}
+              >
+                Sign Up
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -214,66 +264,17 @@ export default function CoursePurchaseOptions({
         </Alert>
       )}
 
+      {/* Note about individual purchases */}
+      <Alert className="border-amber-200 bg-amber-50">
+        <AlertCircle className="h-4 w-4 text-amber-600" />
+        <AlertDescription className="text-amber-800">
+          <strong>Organization Purchase Required:</strong> Courses are purchased at the organization level to provide access to all team members. Individual purchases are not currently available.
+        </AlertDescription>
+      </Alert>
+
       {/* Pricing Cards - Responsive Stack on Mobile */}
       <div className="space-y-4">
-        {/* Individual Plan */}
-        <Card
-          className={`relative cursor-pointer transition-all ${
-            selectedOption === "individual"
-              ? "ring-2 ring-[#FF4A1C] bg-[#FF4A1C]/5 shadow-xl"
-              : "hover:shadow-lg border-gray-200"
-          }`}
-          onClick={() => setSelectedOption("individual")}
-        >
-          <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#FF4A1C] to-[#ff6b47] flex items-center justify-center shadow-md">
-                  <User className="w-5 h-5 text-white" />
-                </div>
-                <CardTitle className="text-lg text-[#2A4666]">
-                  Individual
-                </CardTitle>
-              </div>
-              <input
-                type="radio"
-                checked={selectedOption === "individual"}
-                onChange={() => setSelectedOption("individual")}
-                className="w-5 h-5 text-[#FF4A1C] accent-[#FF4A1C]"
-              />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-4">
-              <div className="flex items-baseline gap-1">
-                <span className="text-3xl lg:text-4xl font-bold text-[#2A4666]">
-                  ${individualPrice.toLocaleString()}
-                </span>
-                <span className="text-gray-500">one-time</span>
-              </div>
-              <p className="text-sm text-gray-600 mt-1">
-                Perfect for individual learners
-              </p>
-            </div>
-
-            <ul className="space-y-2">
-              <li className="flex items-center gap-2 text-sm">
-                <Check className="w-4 h-4 text-green-500 flex-shrink-0" />
-                <span className="text-gray-700">Lifetime access</span>
-              </li>
-              <li className="flex items-center gap-2 text-sm">
-                <Check className="w-4 h-4 text-green-500 flex-shrink-0" />
-                <span className="text-gray-700">Certificate of completion</span>
-              </li>
-              <li className="flex items-center gap-2 text-sm">
-                <Check className="w-4 h-4 text-green-500 flex-shrink-0" />
-                <span className="text-gray-700">All future updates</span>
-              </li>
-            </ul>
-          </CardContent>
-        </Card>
-
-        {/* Organization Plan */}
+        {/* Organization Plan - Now the primary option */}
         <Card
           className={`relative cursor-pointer transition-all ${
             selectedOption === "organization"
@@ -288,7 +289,7 @@ export default function CoursePurchaseOptions({
           <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 z-10">
             <Badge className="bg-gradient-to-r from-[#2A4666] to-[#3a5a86] text-white px-3 py-1">
               <Crown className="w-3 h-3 mr-1" />
-              BEST VALUE
+              TEAM ACCESS
             </Badge>
           </div>
 
@@ -333,11 +334,15 @@ export default function CoursePurchaseOptions({
               </li>
               <li className="flex items-center gap-2 text-sm">
                 <Check className="w-4 h-4 text-green-500 flex-shrink-0" />
-                <span className="text-gray-700">Team analytics</span>
+                <span className="text-gray-700">Team progress tracking</span>
               </li>
               <li className="flex items-center gap-2 text-sm">
                 <Check className="w-4 h-4 text-green-500 flex-shrink-0" />
                 <span className="text-gray-700">Priority support</span>
+              </li>
+              <li className="flex items-center gap-2 text-sm">
+                <Check className="w-4 h-4 text-green-500 flex-shrink-0" />
+                <span className="text-gray-700">All future updates</span>
               </li>
             </ul>
 
@@ -358,28 +363,34 @@ export default function CoursePurchaseOptions({
           <CardContent className="pt-6">
             <h4 className="font-semibold text-[#2A4666] mb-3 flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-[#FF4A1C]" />
-              Team Savings Calculator
+              Team Value Calculator
             </h4>
             <div className="grid grid-cols-3 gap-4 text-sm">
               <div className="text-center p-3 bg-white rounded-lg">
                 <p className="text-gray-600 text-xs">5 employees</p>
                 <p className="font-bold text-[#2A4666]">
-                  Save $
-                  {(individualPrice * 5 - organizationPrice).toLocaleString()}
+                  ${organizationPrice.toLocaleString()} total
+                </p>
+                <p className="text-xs text-gray-500">
+                  ${Math.round(organizationPrice / 5).toLocaleString()} per person
                 </p>
               </div>
               <div className="text-center p-3 bg-white rounded-lg">
                 <p className="text-gray-600 text-xs">10 employees</p>
                 <p className="font-bold text-green-600">
-                  Save $
-                  {(individualPrice * 10 - organizationPrice).toLocaleString()}
+                  ${organizationPrice.toLocaleString()} total
+                </p>
+                <p className="text-xs text-gray-500">
+                  ${Math.round(organizationPrice / 10).toLocaleString()} per person
                 </p>
               </div>
               <div className="text-center p-3 bg-white rounded-lg">
-                <p className="text-gray-600 text-xs">20 employees</p>
+                <p className="text-gray-600 text-xs">20+ employees</p>
                 <p className="font-bold text-green-600">
-                  Save $
-                  {(individualPrice * 20 - organizationPrice).toLocaleString()}
+                  ${organizationPrice.toLocaleString()} total
+                </p>
+                <p className="text-xs text-gray-500">
+                  ${Math.round(organizationPrice / 20).toLocaleString()}+ per person
                 </p>
               </div>
             </div>
@@ -389,21 +400,12 @@ export default function CoursePurchaseOptions({
 
       {/* Purchase Button - Responsive */}
       <Button
-        onClick={
-          selectedOption === "individual"
-            ? handleIndividualPurchase
-            : handleOrganizationPurchase
-        }
+        onClick={handleOrganizationPurchase}
         disabled={
-          isLoading ||
-          (selectedOption === "organization" && (!organization || !isOrgAdmin))
+          isLoading || !organization || !isAdmin
         }
         size="lg"
-        className={`w-full font-semibold shadow-lg ${
-          selectedOption === "individual"
-            ? "bg-gradient-to-r from-[#FF4A1C] to-[#ff6b47] hover:from-[#e5421a] hover:to-[#ff5533]"
-            : "bg-gradient-to-r from-[#2A4666] to-[#3a5a86] hover:from-[#1a3656] hover:to-[#2a4a76]"
-        }`}
+        className="w-full font-semibold shadow-lg bg-gradient-to-r from-[#2A4666] to-[#3a5a86] hover:from-[#1a3656] hover:to-[#2a4a76]"
       >
         {isLoading ? (
           <span className="flex items-center justify-center gap-2">
@@ -412,24 +414,32 @@ export default function CoursePurchaseOptions({
           </span>
         ) : (
           <span className="flex items-center justify-center gap-2">
-            Purchase{" "}
-            {selectedOption === "individual" ? "Individual" : "Organization"}{" "}
-            Access
+            Purchase Organization Access
             <ChevronRight className="w-5 h-5" />
           </span>
         )}
       </Button>
 
+      {/* Admin requirement notice */}
+      {organization && !isAdmin && (
+        <Alert className="border-amber-200 bg-amber-50">
+          <AlertCircle className="h-4 w-4 text-amber-600" />
+          <AlertDescription className="text-amber-800">
+            Only organization administrators can purchase courses. Please contact your organization admin to request access to this course.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Organization Link - Mobile Responsive */}
-      {!organization && selectedOption === "organization" && (
+      {!organization && (
         <p className="text-center text-sm text-gray-600">
           <a
-            href="/organization-signup"
+            href="/create-organization"
             className="text-[#FF4A1C] hover:underline font-semibold"
           >
             Create an organization
           </a>{" "}
-          to purchase for your team
+          to purchase courses for your team
         </p>
       )}
 

@@ -1,40 +1,68 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isEnrolledInCourse } from "@/sanity/lib/student/isEnrolledInCourse";
-import { getStudentByClerkId } from "@/sanity/lib/student/getStudentByClerkId";
-import { checkOrganizationCourseAccess } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { userId, courseId } = body;
+    // Get the session from Better Auth
+    const session = await auth.api.getSession({
+      headers: request.headers,
+    });
 
-    if (!userId || !courseId) {
+    if (!session?.user) {
       return NextResponse.json(
-        { error: "Missing required fields" },
+        { error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    const body = await request.json();
+    const { courseId } = body;
+
+    if (!courseId) {
+      return NextResponse.json(
+        { error: "Course ID is required" },
         { status: 400 }
       );
     }
 
-    // Check individual enrollment
-    const enrolled = await isEnrolledInCourse(userId, courseId);
+    // Check if user is enrolled through organization
+    const member = await prisma.member.findFirst({
+      where: {
+        userId: session.user.id,
+      },
+      include: {
+        organization: {
+          include: {
+            enrollments: {
+              where: {
+                courseId: courseId,
+                isActive: true,
+              },
+            },
+          },
+        },
+      },
+    });
 
-    // Get student data
-    const studentData = await getStudentByClerkId(userId);
-
-    // Check organization access
-    const orgAccess = await checkOrganizationCourseAccess(userId, courseId);
-    const hasOrgAccess =
-      orgAccess.hasAccess && orgAccess.accessType === "organization";
+    const hasAccess = !!(member?.organization.enrollments.length);
 
     return NextResponse.json({
-      isEnrolled: enrolled,
-      hasOrgAccess,
-      student: studentData?.data || null,
+      enrolled: hasAccess,
+      accessType: hasAccess ? "organization" : "none",
+      organizationName: member?.organization.name,
+      success: true,
     });
   } catch (error) {
     console.error("Error checking enrollment:", error);
+
     return NextResponse.json(
-      { error: "Failed to check enrollment" },
+      {
+        error: "Failed to check enrollment",
+        details: error instanceof Error ? error.message : "Unknown error",
+        enrolled: false,
+        success: false,
+      },
       { status: 500 }
     );
   }

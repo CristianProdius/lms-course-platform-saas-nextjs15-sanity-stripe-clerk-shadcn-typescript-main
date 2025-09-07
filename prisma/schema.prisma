@@ -1,0 +1,324 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Better Auth Tables
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  firstName   String?
+  lastName    String?
+  name        String?
+  imageUrl    String?
+  emailVerified Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  sessions      Session[]
+  accounts      Account[]
+  memberships   Member[]
+  invitations   Invitation[]
+  lessonProgress LessonProgress[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  activeOrganizationId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id           String  @id @default(cuid())
+  userId       String
+  providerId   String
+  accountId    String
+  password     String? // For email/password auth
+  accessToken  String?
+  refreshToken String?
+  expiresAt    DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@map("account")
+}
+
+// Organization System
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  logo        String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Legacy fields for existing functionality
+  description String?
+  imageUrl    String?
+
+  // Billing
+  stripeCustomerId     String?  @unique
+  stripeSubscriptionId String?  @unique
+  subscriptionStatus   String?  // active, past_due, canceled, etc.
+  subscriptionPlan     String?  // basic, premium, enterprise
+  billingEmail         String?
+
+  // Relations
+  members     Member[]
+  invitations Invitation[]
+  enrollments OrganizationEnrollment[]
+
+  @@map("organization")
+}
+
+model Member {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  role           String   // admin, employee
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Legacy field
+  joinedAt       DateTime @default(now())
+
+  // Relations
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@map("organization_member")
+}
+
+// Better Auth expects this exact table name
+model Invitation {
+  id             String   @id @default(cuid())
+  email          String
+  organizationId String
+  inviterId      String
+  role           String   // admin, employee
+  token          String   @unique @default(cuid())
+  expiresAt      DateTime
+  status         String   @default("pending") // pending, accepted, expired
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  inviter      User         @relation(fields: [inviterId], references: [id])
+
+  @@unique([email, organizationId])
+  @@map("invitation")
+}
+
+// Course System
+model Category {
+  id          String   @id @default(cuid())
+  title       String   @unique
+  slug        String   @unique
+  description String?
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  courses Course[]
+
+  @@map("category")
+}
+
+model Instructor {
+  id          String   @id @default(cuid())
+  name        String
+  email       String   @unique
+  bio         String?
+  imageUrl    String?
+  website     String?
+  social      Json?    // {twitter: "", linkedin: "", etc}
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  courses Course[]
+
+  @@map("instructor")
+}
+
+model Course {
+  id           String   @id @default(cuid())
+  title        String
+  slug         String   @unique
+  description  String
+  thumbnail    String?
+  price        Float
+  currency     String   @default("USD")
+  isPublished  Boolean  @default(false)
+  isFree       Boolean  @default(false)
+  level        String?  // beginner, intermediate, advanced
+  duration     Int?     // estimated duration in minutes
+  categoryId   String?
+  instructorId String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Content
+  objectives   String[] // learning objectives
+  prerequisites String[] // course prerequisites
+  tags         String[] // searchable tags
+
+  // Relations
+  category    Category?    @relation(fields: [categoryId], references: [id])
+  instructor  Instructor?  @relation(fields: [instructorId], references: [id])
+  modules     Module[]
+  enrollments OrganizationEnrollment[]
+
+  @@map("course")
+}
+
+model Module {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  orderIndex  Int
+  courseId    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  course  Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons Lesson[]
+
+  @@unique([courseId, orderIndex])
+  @@map("module")
+}
+
+model Lesson {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  content     Json?    // Rich text content (JSON format)
+  vimeoUrl    String?  // Vimeo video URL
+  vimeoId     String?  // Vimeo video ID for embedding
+  duration    Int?     // lesson duration in minutes
+  orderIndex  Int
+  moduleId    String
+  isFree      Boolean  @default(false) // Preview lessons
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  module    Module           @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  progress  LessonProgress[]
+  resources LessonResource[]
+
+  @@unique([moduleId, orderIndex])
+  @@map("lesson")
+}
+
+model LessonResource {
+  id        String   @id @default(cuid())
+  title     String
+  fileName  String
+  fileUrl   String
+  fileSize  Int      // in bytes
+  mimeType  String
+  lessonId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@map("lesson_resource")
+}
+
+// Enrollment and Progress System
+model OrganizationEnrollment {
+  id             String   @id @default(cuid())
+  organizationId String
+  courseId       String
+  enrolledAt     DateTime @default(now())
+  isActive       Boolean  @default(true)
+  
+  // Payment info
+  stripePaymentIntentId String?
+  amountPaid           Float?
+  currency             String?
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  course       Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, courseId])
+  @@map("organization_enrollment")
+}
+
+model LessonProgress {
+  id           String   @id @default(cuid())
+  userId       String
+  lessonId     String
+  completedAt  DateTime @default(now())
+  timeSpent    Int?     // time spent in minutes
+  lastPosition Int?     // last video position in seconds
+
+  // Relations
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+  @@map("lesson_progress")
+}
+
+// Analytics and Metrics (Optional)
+model CourseAnalytics {
+  id                String   @id @default(cuid())
+  courseId          String   @unique
+  totalEnrollments  Int      @default(0)
+  activeEnrollments Int      @default(0)
+  completionRate    Float    @default(0)
+  avgRating         Float?
+  totalRevenue      Float    @default(0)
+  lastUpdated       DateTime @default(now())
+
+  @@map("course_analytics")
+}
+
+// Email Subscribers (Landing Page)
+model EmailSubscriber {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  source    String   @default("hero") // hero, footer, etc.
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("email_subscriber")
+}

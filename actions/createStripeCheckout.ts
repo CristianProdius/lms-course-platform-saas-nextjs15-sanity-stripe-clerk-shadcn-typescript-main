@@ -1,96 +1,70 @@
 "use server";
 
-import stripe from "@/lib/stripe";
-import baseUrl from "@/lib/baseUrl";
+import { auth } from "@/lib/auth";
+import { createOrganizationCheckoutSession, checkOrganizationCourseAccess } from "@/lib/stripe-org";
+import { prisma } from "@/lib/prisma";
+import { headers } from "next/headers";
+import { getActiveOrganization } from "@/lib/auth-helpers";
 
-import { urlFor } from "@/sanity/lib/image";
-import getCourseById from "@/sanity/lib/courses/getCourseById";
-import { createStudentIfNotExistsServer } from "@/sanity/lib/student/createStudentIfNotExists";
-import { clerkClient } from "@clerk/nextjs/server";
-import { createEnrollment } from "@/sanity/lib/student/createEnrollment";
-
-export async function createStripeCheckout(courseId: string, userId: string) {
+export async function createStripeCheckout(courseId: string) {
   try {
-    // 1. Query course details from Sanity
-    const course = await getCourseById(courseId);
-    const clerkUser = await (await clerkClient()).users.getUser(userId);
-    const { emailAddresses, firstName, lastName, imageUrl } = clerkUser;
-    const email = emailAddresses[0]?.emailAddress;
+    const headersList = await headers();
+    const session = await auth.api.getSession({
+      headers: headersList,
+    });
 
-    if (!emailAddresses || !email) {
-      throw new Error("User details not found");
+    if (!session) {
+      throw new Error("Authentication required");
     }
+
+    // Check if user has admin permissions for the organization
+    const userOrganization = await getActiveOrganization(session);
+    if (!userOrganization || userOrganization.role !== "admin") {
+      throw new Error("Admin access required to purchase courses");
+    }
+
+    // Get course details
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: {
+        id: true,
+        title: true,
+        price: true,
+        slug: true,
+      },
+    });
 
     if (!course) {
       throw new Error("Course not found");
     }
 
-    // mid step - create a user in sanity if it doesn't exist
-    const user = await createStudentIfNotExistsServer({
-      clerkId: userId,
-      email: email || "",
-      firstName: firstName || email,
-      lastName: lastName || "",
-      imageUrl: imageUrl || "",
+    // Check if organization already has access to this course
+    const hasAccess = await checkOrganizationCourseAccess(userOrganization.id, course.id);
+    if (hasAccess) {
+      throw new Error("Organization already has access to this course");
+    }
+
+    // Create Stripe checkout session
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const checkoutSession = await createOrganizationCheckoutSession({
+      organizationId: userOrganization.id,
+      courseId: course.id,
+      courseName: course.title,
+      coursePrice: course.price,
+      successUrl: `${baseUrl}/dashboard/courses/${course.id}?success=true`,
+      cancelUrl: `${baseUrl}/dashboard/courses/${course.id}?canceled=true`,
     });
 
-    if (!user) {
-      throw new Error("User not found");
-    }
+    return {
+      sessionId: checkoutSession.id,
+      url: checkoutSession.url,
+      success: true,
+    };
 
-    // 2. Validate course data and prepare price for Stripe
-    if (!course.price && course.price !== 0) {
-      throw new Error("Course price is not set");
-    }
-    const priceInCents = Math.round(course.price * 100);
-
-    // if course is free, create enrollment and redirect to course page (BYPASS STRIPE CHECKOUT)
-    if (priceInCents === 0) {
-      await createEnrollment({
-        studentId: user._id,
-        courseId: course._id,
-        paymentId: "free",
-        amount: 0,
-      });
-
-      return { url: `/courses/${course.slug?.current}` };
-    }
-
-    const { title, description, image, slug } = course;
-
-    if (!title || !description || !image || !slug) {
-      throw new Error("Course data is incomplete");
-    }
-
-    // 3. Create and configure Stripe Checkout Session with course details
-    const session = await stripe.checkout.sessions.create({
-      line_items: [
-        {
-          price_data: {
-            currency: "usd",
-            product_data: {
-              name: title,
-              description: description,
-              images: [urlFor(image).url() || ""],
-            },
-            unit_amount: priceInCents,
-          },
-          quantity: 1,
-        },
-      ],
-      mode: "payment",
-      success_url: `${baseUrl}/courses/${slug.current}`,
-      cancel_url: `${baseUrl}/courses/${slug.current}?canceled=true`,
-      metadata: {
-        courseId: course._id,
-        userId: userId,
-      },
-    });
-
-    // 4. Return checkout session URL for client redirect
-    return { url: session.url };
   } catch (error) {
     console.error("Error in createStripeCheckout:", error);
-    throw new Error("Failed to create checkout session");
+    throw error;
   }
 }
+
+export default createStripeCheckout;

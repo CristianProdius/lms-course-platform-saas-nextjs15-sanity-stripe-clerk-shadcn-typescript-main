@@ -1,13 +1,11 @@
 import { redirect } from "next/navigation";
-import { currentUser } from "@clerk/nextjs/server";
-import { getLessonById } from "@/sanity/lib/lessons/getLessonById";
-import getCourseById from "@/sanity/lib/courses/getCourseById";
-import { PortableText } from "@portabletext/react";
-import { LoomEmbed } from "@/components/LoomEmbed";
+import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
+import { prisma } from "@/lib/prisma";
 import { VideoPlayer } from "@/components/VideoPlayer";
 import { LessonCompleteButton } from "@/components/LessonCompleteButton";
-import { LessonResources } from "@/components/LessonResources";
-import { projectId, dataset } from "@/sanity/env";
+import { vimeoIdToEmbedUrlWithParams } from "@/lib/vimeo";
+import { isPlatformAdmin } from "@/lib/auth";
 import Link from "next/link";
 import {
   ChevronLeft,
@@ -15,7 +13,6 @@ import {
   Clock,
   FileText,
   Video,
-  Download,
   BookOpen,
   Trophy,
 } from "lucide-react";
@@ -33,50 +30,112 @@ interface LessonPageProps {
 }
 
 export default async function LessonPage({ params }: LessonPageProps) {
-  const user = await currentUser();
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+
+  if (!session?.user?.id) {
+    redirect("/sign-in");
+  }
+
   const { courseId, lessonId } = await params;
 
-  const [lesson, course] = await Promise.all([
-    getLessonById(lessonId),
-    getCourseById(courseId),
-  ]);
+  // Check if user is platform admin
+  const adminCheck = await isPlatformAdmin(await headers());
+  const isPlatformAdminUser = adminCheck.isAdmin;
 
-  if (!lesson || !course) {
+  // Get user's organization membership (skip for platform admins)
+  let member = null;
+  if (!isPlatformAdminUser) {
+    member = await prisma.member.findFirst({
+      where: {
+        userId: session.user.id,
+      },
+      include: {
+        organization: true,
+      },
+    });
+
+    if (!member) {
+      redirect("/dashboard");
+    }
+  }
+
+  // Get lesson with all related data
+  const lesson = await prisma.lesson.findUnique({
+    where: { id: lessonId },
+    include: {
+      module: {
+        include: {
+          course: {
+            include: {
+              modules: {
+                include: {
+                  lessons: {
+                    orderBy: { orderIndex: 'asc' },
+                  },
+                },
+                orderBy: { orderIndex: 'asc' },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!lesson || lesson.module.courseId !== courseId) {
     return redirect(`/dashboard/courses/${courseId}`);
   }
 
-  // Find current module and lesson index
-  const currentModuleIndex =
-    course.modules?.findIndex((module) =>
-      module.lessons?.some((l) => l._id === lessonId)
-    ) ?? -1;
+  const course = lesson.module.course;
 
-  const currentModule = course.modules?.[currentModuleIndex];
-  const currentLessonIndex =
-    currentModule?.lessons?.findIndex((l) => l._id === lessonId) ?? -1;
+  // Check if organization has access to this course (skip for platform admins)
+  let organizationEnrollment = null;
+  if (!isPlatformAdminUser && member) {
+    organizationEnrollment = await prisma.organizationEnrollment.findFirst({
+      where: {
+        organizationId: member.organizationId,
+        courseId: course.id,
+        isActive: true,
+      },
+    });
+
+    // If no enrollment, check if it's a free preview lesson
+    if (!organizationEnrollment && !lesson.isFree) {
+      redirect(`/dashboard/courses/${courseId}`);
+    }
+  }
+
+  // Find current module and lesson index
+  const currentModuleIndex = course.modules.findIndex(
+    (module) => module.id === lesson.moduleId
+  );
+
+  const currentModule = course.modules[currentModuleIndex];
+  const currentLessonIndex = currentModule.lessons.findIndex(
+    (l) => l.id === lessonId
+  );
 
   // Get navigation info
   const getPreviousLesson = () => {
     if (currentLessonIndex > 0) {
-      return currentModule?.lessons?.[currentLessonIndex - 1];
+      return currentModule.lessons[currentLessonIndex - 1];
     }
     if (currentModuleIndex > 0) {
-      const prevModule = course.modules?.[currentModuleIndex - 1];
-      return prevModule?.lessons?.[prevModule.lessons.length - 1];
+      const prevModule = course.modules[currentModuleIndex - 1];
+      return prevModule.lessons[prevModule.lessons.length - 1];
     }
     return null;
   };
 
   const getNextLesson = () => {
-    if (
-      currentModule?.lessons &&
-      currentLessonIndex < currentModule.lessons.length - 1
-    ) {
+    if (currentLessonIndex < currentModule.lessons.length - 1) {
       return currentModule.lessons[currentLessonIndex + 1];
     }
-    if (course.modules && currentModuleIndex < course.modules.length - 1) {
+    if (currentModuleIndex < course.modules.length - 1) {
       const nextModule = course.modules[currentModuleIndex + 1];
-      return nextModule?.lessons?.[0];
+      return nextModule.lessons[0];
     }
     return null;
   };
@@ -85,18 +144,30 @@ export default async function LessonPage({ params }: LessonPageProps) {
   const nextLesson = getNextLesson();
 
   // Calculate lesson progress
-  const totalLessons =
-    course.modules?.reduce((acc, m) => acc + (m.lessons?.length || 0), 0) || 0;
+  const totalLessons = course.modules.reduce(
+    (acc, m) => acc + m.lessons.length,
+    0
+  );
   const currentLessonNumber =
-    course.modules?.slice(0, currentModuleIndex + 1).reduce((acc, m, idx) => {
+    course.modules.slice(0, currentModuleIndex + 1).reduce((acc, m, idx) => {
       if (idx < currentModuleIndex) {
-        return acc + (m.lessons?.length || 0);
+        return acc + m.lessons.length;
       }
       return acc + currentLessonIndex + 1;
-    }, 0) || 0;
+    }, 0);
 
   // Estimate reading time (mock data - you can calculate based on content)
-  const estimatedTime = "15 min";
+  const estimatedTime = lesson.duration ? `${lesson.duration} min` : "15 min";
+
+  // Use stored Vimeo URL or construct from ID if available
+  const vimeoUrl = lesson.vimeoUrl || (lesson.vimeoId 
+    ? vimeoIdToEmbedUrlWithParams(lesson.vimeoId, {
+        badge: 0,
+        autopause: 0,
+        player_id: 0,
+        app_id: 58479
+      })
+    : null);
 
   return (
     <div className="h-full flex flex-col bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-950">
@@ -106,6 +177,12 @@ export default async function LessonPage({ params }: LessonPageProps) {
           <div className="flex items-center justify-between h-16">
             {/* Left side - Breadcrumb */}
             <div className="flex items-center gap-4">
+              <Link
+                href={`/dashboard/courses/${courseId}`}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </Link>
               <Separator orientation="vertical" className="h-6" />
 
               <div className="flex items-center gap-2 text-sm">
@@ -140,12 +217,11 @@ export default async function LessonPage({ params }: LessonPageProps) {
                 className="bg-gradient-to-r from-[#FF4A1C]/10 to-[#2A4666]/10 border-[#FF4A1C]/20"
               >
                 <BookOpen className="h-3 w-3 mr-1" />
-                {currentModule?.title}
+                {currentModule.title}
               </Badge>
               <span className="text-sm text-gray-500">•</span>
               <span className="text-sm text-gray-500">
-                Lesson {currentLessonIndex + 1} of{" "}
-                {currentModule?.lessons?.length || 0}
+                Lesson {currentLessonIndex + 1} of {currentModule.lessons.length}
               </span>
             </div>
 
@@ -165,13 +241,10 @@ export default async function LessonPage({ params }: LessonPageProps) {
           {/* Content Sections */}
           <div className="space-y-8 lg:space-y-12">
             {/* Video Section */}
-            {(lesson.videoUrl || lesson.loomUrl) && (
+            {vimeoUrl && (
               <Card className="overflow-hidden shadow-lg border-gray-200 dark:border-gray-800">
                 <div className="relative bg-gradient-to-br from-gray-900 to-gray-800 aspect-video">
-                  {lesson.videoUrl && <VideoPlayer url={lesson.videoUrl} />}
-                  {lesson.loomUrl && !lesson.videoUrl && (
-                    <LoomEmbed shareUrl={lesson.loomUrl} />
-                  )}
+                  <VideoPlayer url={vimeoUrl} />
 
                   {/* Video Overlay Badge */}
                   <div className="absolute top-4 left-4 z-10">
@@ -180,35 +253,6 @@ export default async function LessonPage({ params }: LessonPageProps) {
                       Video Lesson
                     </Badge>
                   </div>
-                </div>
-              </Card>
-            )}
-
-            {/* Resources Section */}
-            {lesson.resources && lesson.resources.length > 0 && (
-              <Card className="p-6 lg:p-8 shadow-sm border-gray-200 dark:border-gray-800">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#FF4A1C]/20 to-[#2A4666]/20 flex items-center justify-center">
-                    <Download className="h-5 w-5 text-[#2A4666]" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-                      Lesson Resources
-                    </h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      Download materials to enhance your learning
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid gap-3">
-                  <LessonResources
-                    resources={lesson.resources.filter(
-                      (r) => r && r.file?.asset
-                    )}
-                    projectId={projectId}
-                    dataset={dataset}
-                  />
                 </div>
               </Card>
             )}
@@ -231,15 +275,14 @@ export default async function LessonPage({ params }: LessonPageProps) {
                 </div>
 
                 <div className="prose prose-gray dark:prose-invert max-w-none prose-headings:font-semibold prose-a:text-[#FF4A1C] prose-a:no-underline hover:prose-a:underline">
-                  <PortableText value={lesson.content} />
+                  <div dangerouslySetInnerHTML={{ __html: lesson.content as any }} />
                 </div>
               </Card>
             )}
 
             {/* Completion Section - Using the hero variant */}
             <LessonCompleteButton
-              lessonId={lesson._id}
-              clerkId={user!.id}
+              lessonId={lesson.id}
               variant="hero"
             />
           </div>
@@ -253,7 +296,7 @@ export default async function LessonPage({ params }: LessonPageProps) {
             {/* Previous Lesson */}
             {previousLesson ? (
               <Link
-                href={`/dashboard/courses/${courseId}/lessons/${previousLesson._id}`}
+                href={`/dashboard/courses/${courseId}/lessons/${previousLesson.id}`}
                 className="group flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               >
                 <ChevronLeft className="h-5 w-5 text-gray-400 group-hover:text-[#FF4A1C] transition-colors" />
@@ -284,7 +327,7 @@ export default async function LessonPage({ params }: LessonPageProps) {
             {/* Next Lesson */}
             {nextLesson ? (
               <Link
-                href={`/dashboard/courses/${courseId}/lessons/${nextLesson._id}`}
+                href={`/dashboard/courses/${courseId}/lessons/${nextLesson.id}`}
                 className="group flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               >
                 <div className="text-right">

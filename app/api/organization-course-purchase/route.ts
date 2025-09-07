@@ -1,22 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { currentUser } from "@clerk/nextjs/server";
-import { getStudentByClerkId } from "@/sanity/lib/student/getStudentByClerkId";
-import getCourseById from "@/sanity/lib/courses/getCourseById";
-import Stripe from "stripe";
-import { urlFor } from "@/sanity/lib/image";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { createOrganizationCheckoutSession } from "@/lib/stripe-org";
+import { getActiveOrganization } from "@/lib/auth-helpers";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2023-10-16" as Stripe.LatestApiVersion,
-});
-
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const user = await currentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const session = await auth.api.getSession({
+      headers: request.headers,
+    });
+
+    if (!session) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 }
+      );
     }
 
-    const { courseId } = await req.json();
+    const { courseId } = await request.json();
+
     if (!courseId) {
       return NextResponse.json(
         { error: "Course ID is required" },
@@ -24,78 +26,79 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Get student data to check if they're an admin
-    const studentData = await getStudentByClerkId(user.id);
-    const student = studentData?.data;
-
-    if (!student?.organization || student.role !== "admin") {
+    // Check if user has admin permissions for the organization
+    const userOrganization = await getActiveOrganization(session);
+    if (!userOrganization || userOrganization.role !== "admin") {
       return NextResponse.json(
-        {
-          error:
-            "Only organization admins can purchase courses for the organization",
-        },
+        { error: "Admin access required to purchase courses" },
         { status: 403 }
       );
     }
 
-    // Get course data
-    const course = await getCourseById(courseId);
-    if (!course) {
-      return NextResponse.json({ error: "Course not found" }, { status: 404 });
-    }
-
-    // Get the course image URL using the image field
-    let courseImageUrl: string | undefined;
-    if (course.image) {
-      try {
-        courseImageUrl = urlFor(course.image).width(800).url();
-      } catch (error) {
-        console.error("Error generating image URL:", error);
-        courseImageUrl = undefined;
-      }
-    }
-
-    // Ensure we have a valid price (default to 0 if undefined)
-    const coursePrice = course.price ?? 0;
-
-    // Create Stripe checkout session for organization purchase
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      line_items: [
-        {
-          price_data: {
-            currency: "usd",
-            product_data: {
-              name: `${course.title || "Course"} - Organization License`,
-              description: `Organization-wide access to ${
-                course.title || "this course"
-              } for all team members`,
-              images: courseImageUrl ? [courseImageUrl] : undefined,
-            },
-            unit_amount: Math.round(coursePrice * 100), // Convert to cents and ensure it's an integer
-          },
-          quantity: 1,
-        },
-      ],
-      mode: "payment",
-      success_url: `${process.env.NEXT_PUBLIC_BASE_URL}/dashboard/admin?purchase=success&courseId=${courseId}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL}/courses/${
-        course.slug?.current || courseId
-      }`,
-      metadata: {
-        courseId,
-        userId: user.id,
-        organizationId: student.organization._ref,
-        purchaseType: "organization",
+    // Get course details
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: {
+        id: true,
+        title: true,
+        price: true,
+        slug: true,
       },
     });
 
-    return NextResponse.json({ sessionId: session.id });
+    if (!course) {
+      return NextResponse.json(
+        { error: "Course not found" },
+        { status: 404 }
+      );
+    }
+
+    // Check if organization already has access to this course
+    const existingEnrollment = await prisma.organizationEnrollment.findUnique({
+      where: {
+        organizationId_courseId: {
+          organizationId: userOrganization.id,
+          courseId: course.id,
+        },
+      },
+    });
+
+    if (existingEnrollment?.isActive) {
+      return NextResponse.json(
+        { error: "Organization already has access to this course" },
+        { status: 400 }
+      );
+    }
+
+    // Create Stripe checkout session
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const checkoutSession = await createOrganizationCheckoutSession({
+      organizationId: userOrganization.id,
+      courseId: course.id,
+      courseName: course.title,
+      coursePrice: course.price,
+      successUrl: `${baseUrl}/dashboard/courses/${course.id}?success=true`,
+      cancelUrl: `${baseUrl}/dashboard/courses/${course.id}?canceled=true`,
+    });
+
+    return NextResponse.json({
+      sessionId: checkoutSession.id,
+      url: checkoutSession.url,
+      success: true,
+    });
+
   } catch (error) {
-    console.error("Error creating organization checkout session:", error);
+    console.error("Error in organization-course-purchase:", error);
     return NextResponse.json(
-      { error: "Failed to create checkout session" },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }
+}
+
+export async function GET(request: NextRequest) {
+  return NextResponse.json({
+    error: "Method not allowed. Use POST to create checkout sessions.",
+    success: false,
+  }, { status: 405 });
 }

@@ -1,306 +1,164 @@
-import { isEnrolledInCourse } from "@/sanity/lib/student/isEnrolledInCourse";
-import { getStudentByClerkId } from "@/sanity/lib/student/getStudentByClerkId";
-import getCourseById from "@/sanity/lib/courses/getCourseById";
+import { betterAuth } from "better-auth";
+import { organization } from "better-auth/plugins";
+import { createAccessControl } from "better-auth/plugins/access";
+import { prismaAdapter } from "better-auth/adapters/prisma";
+import { prisma } from "./prisma";
+import { Resend } from "resend";
 
-import { client } from "@/sanity/lib/adminClient";
-import groq from "groq";
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
-// Define types for the data structures we're working with
-interface AuthResult {
-  isAuthorized: boolean;
-  redirect?: string;
-  studentId?: string;
-}
+// Platform admin emails - supports multiple admins via comma-separated list
+const PLATFORM_ADMIN_EMAILS = [
+  ...(process.env.PLATFORM_ADMIN_EMAILS?.split(',').map(email => email.trim()) || []),
+  process.env.PLATFORM_ADMIN_EMAIL
+].filter(Boolean);
 
-interface CourseAccessResult {
-  hasAccess: boolean;
-  accessType: "organization" | "individual" | "none";
-  organizationName?: string;
-  subscriptionPlan?: string;
-  reason?: string;
-}
+// Helper function to check if user is platform admin by email
+export const isPlatformAdminByEmail = (email: string) => {
+  return PLATFORM_ADMIN_EMAILS.includes(email);
+};
 
-interface Course {
-  _id: string;
-  title: string;
-  description: string;
-  thumbnail: string;
-  price: number;
-  accessType: string;
-  isFree: boolean;
-  organizationName?: string;
-  slug?: {
-    current: string;
-  };
-  category?: {
-    _id: string;
-    title: string;
-    [key: string]: unknown;
-  };
-  instructor?: {
-    _id: string;
-    name: string;
-    [key: string]: unknown;
-  };
-}
-
-interface OrganizationCourse {
-  course: Course | null;
-}
-
-interface EnrollmentWithCourse {
-  course: Course | null;
-}
-
-interface Student {
-  _id: string;
-  organization?: {
-    _ref: string;
-  };
-  [key: string]: unknown;
-}
-
-interface Organization {
-  _id: string;
-  name: string;
-  [key: string]: unknown;
-}
-
-export async function checkCourseAccess(
-  clerkId: string | null,
-  courseId: string
-): Promise<AuthResult> {
-  if (!clerkId) {
-    return {
-      isAuthorized: false,
-      redirect: "/",
-    };
-  }
-
-  const student = await getStudentByClerkId(clerkId);
-  if (!student?.data?._id) {
-    return {
-      isAuthorized: false,
-      redirect: "/",
-    };
-  }
-
-  // Check both individual enrollment AND organization access
-  const isEnrolled = await isEnrolledInCourse(clerkId, courseId);
-
-  // If not individually enrolled, check organization access
-  if (!isEnrolled) {
-    const orgAccess = await checkOrganizationCourseAccess(clerkId, courseId);
-
-    if (orgAccess.hasAccess && orgAccess.accessType === "organization") {
-      // User has organization access!
-      return {
-        isAuthorized: true,
-        studentId: student.data._id,
-      };
-    }
-
-    // No access at all, redirect to course page
-    const course = await getCourseById(courseId);
-    return {
-      isAuthorized: false,
-      redirect: `/courses/${course?.slug?.current}`,
-    };
-  }
-
-  return {
-    isAuthorized: true,
-    studentId: student.data._id,
-  };
-}
-
-/**
- * Check if a user has access to a course through organization course purchase or individual enrollment
- * This is the PRIMARY function to use for course access checks
- * @param userId - Clerk user ID
- * @param courseId - Sanity course document ID
- * @returns CourseAccessResult with access details
- */
-export async function checkOrganizationCourseAccess(
-  userId: string,
-  courseId: string
-): Promise<CourseAccessResult> {
+// Async function to check if current user is platform admin
+export const isPlatformAdmin = async (request?: Request) => {
   try {
-    // Get student data
-    const studentData = await getStudentByClerkId(userId);
-    const student = studentData?.data as Student | undefined;
-
-    if (!student) {
-      return {
-        hasAccess: false,
-        accessType: "none",
-        reason: "Student record not found",
-      };
+    let headers: Headers;
+    
+    if (request) {
+      headers = request.headers;
+    } else if (typeof window === 'undefined' && (globalThis as any).headers) {
+      headers = (globalThis as any).headers;
+    } else {
+      headers = new Headers();
     }
 
-    // Check individual enrollment first
-    const isIndividuallyEnrolled = await isEnrolledInCourse(userId, courseId);
-    if (isIndividuallyEnrolled) {
-      return {
-        hasAccess: true,
-        accessType: "individual",
-      };
-    }
-
-    // Check organization course purchase
-    if (student.organization) {
-      const orgCourseQuery = groq`*[_type == "organizationCourse" && 
-        organization._ref == $organizationId && 
-        course._ref == $courseId && 
-        isActive == true][0]`;
-
-      const orgCourse = await client.fetch(orgCourseQuery, {
-        organizationId: student.organization._ref,
-        courseId,
-      });
-
-      if (orgCourse) {
-        const org = await client.fetch<Organization>(
-          groq`*[_type == "organization" && _id == $organizationId][0]`,
-          { organizationId: student.organization._ref }
-        );
-
-        return {
-          hasAccess: true,
-          accessType: "organization",
-          organizationName: org?.name,
-        };
-      }
+    const session = await auth.api.getSession({
+      headers
+    });
+    
+    if (!session?.user?.email) {
+      return { isAdmin: false, user: null };
     }
 
     return {
-      hasAccess: false,
-      accessType: "none",
-      reason: "No access to this course",
+      isAdmin: PLATFORM_ADMIN_EMAILS.includes(session.user.email),
+      user: session.user
     };
   } catch (error) {
-    console.error("Error checking course access:", error);
-    return {
-      hasAccess: false,
-      accessType: "none",
-      reason: "Error checking access",
-    };
+    console.error("Error checking platform admin status:", error);
+    return { isAdmin: false, user: null };
   }
-}
+};
 
-/**
- * Simple boolean check for course access - use this as a drop-in replacement
- * for the existing checkCourseAccess function
- */
-export async function hasAnyCourseAccess(
-  userId: string,
-  courseId: string
-): Promise<boolean> {
-  const result = await checkOrganizationCourseAccess(userId, courseId);
-  return result.hasAccess;
-}
+// Define access control statements
+const statement = { 
+  organization: ["create", "read", "update", "delete"],
+  member: ["create", "read", "update", "delete"],
+  course: ["access", "purchase", "manage", "progress"],
+  invitation: ["create", "read", "update", "delete"]
+} as const;
 
-/**
- * Get all accessible courses for a user (both org and individual)
- * Shows courses the organization has purchased or user has individually enrolled in
- */
-export async function getUserAccessibleCourses(userId: string) {
-  try {
-    // Get student data
-    const studentData = await getStudentByClerkId(userId);
-    const student = studentData?.data as Student | undefined;
+const ac = createAccessControl(statement);
 
-    if (!student) {
-      return {
-        courses: [],
-        accessType: "none" as const,
-      };
-    }
+// Define roles
+const admin = ac.newRole({ 
+  organization: ["create", "read", "update", "delete"],
+  member: ["create", "read", "update", "delete"],
+  course: ["purchase", "manage"],
+  invitation: ["create", "read", "update", "delete"]
+});
 
-    let courses: Course[] = [];
-    let accessType: "organization" | "individual" | "both" | "none" = "none";
-    let organizationName: string | undefined;
+const employee = ac.newRole({ 
+  organization: ["read"],
+  member: ["read"],
+  course: ["access", "progress"]
+});
 
-    // Check if user is part of an organization
-    if (student.organization) {
-      // Get all courses the organization has purchased
-      const orgCoursesQuery = groq`*[_type == "organizationCourse" && 
-        organization._ref == $organizationId && 
-        isActive == true
-      ] {
-        course->{
-          ...,
-          "slug": slug.current,
-          "category": category->{...},
-          "instructor": instructor->{...}
+export const auth = betterAuth({
+  database: prismaAdapter(prisma, {
+    provider: "postgresql"
+  }),
+  emailAndPassword: {
+    enabled: true,
+    requireEmailVerification: false, // Set to true for production
+  },
+  socialProviders: {
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID || "",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+      enabled: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
+    },
+  },
+  plugins: [
+    organization({
+      allowUserToCreateOrganization: true, // Allow users to create organizations
+      organizationLimit: 5, // Allow multiple organizations for platform admins
+      ac,
+      roles: {
+        admin,
+        employee
+      },
+      schema: {
+        member: {
+          tableName: "organization_member",
+          fields: {
+            id: "id",
+            userId: "userId",
+            organizationId: "organizationId",
+            role: "role",
+            createdAt: "createdAt"
+          }
         }
-      }`;
-
-      const orgCourses = await client.fetch<OrganizationCourse[]>(
-        orgCoursesQuery,
-        {
-          organizationId: student.organization._ref,
+      },
+      sendInvitationEmail: async (data) => {
+        if (!resend) {
+          console.warn("Resend API key not configured. Email sending is disabled.");
+          console.log("Would send invitation email to:", data.email);
+          return;
         }
-      );
 
-      if (orgCourses && orgCourses.length > 0) {
-        courses = orgCourses
-          .map((oc: OrganizationCourse) => oc.course)
-          .filter((course): course is Course => course !== null);
-        accessType = "organization";
-
-        // Get organization name
-        const org = await client.fetch<string>(
-          groq`*[_type == "organization" && _id == $organizationId][0].name`,
-          { organizationId: student.organization._ref }
-        );
-        organizationName = org;
+        try {
+          await resend.emails.send({
+            from: process.env.FROM_EMAIL || "PrecuityAI <cristian@prodiusenterprise.com>",
+            to: data.email,
+            subject: `You've been invited to join ${data.organization.name}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2>You've been invited!</h2>
+                <p>Hi there,</p>
+                <p>${data.inviter.user.name || data.inviter.user.email} has invited you to join <strong>${data.organization.name}</strong>.</p>
+                <p>Your role will be: <strong>${data.role}</strong></p>
+                <div style="margin: 30px 0;">
+                  <a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/employee-join/${data.invitation.id}" 
+                     style="background-color: #007cba; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+                    Accept Invitation
+                  </a>
+                </div>
+                <p>If you have any questions, feel free to reach out to your inviter.</p>
+                <p>Best regards,<br>The ${data.organization.name} Team</p>
+              </div>
+            `
+          });
+          console.log("Invitation email sent to:", data.email);
+        } catch (error) {
+          console.error("Failed to send invitation email:", error);
+          throw new Error("Failed to send invitation email");
+        }
       }
+    }),
+  ],
+  session: {
+    expiresIn: 60 * 60 * 24 * 7, // 7 days
+    updateAge: 60 * 60 * 24, // 1 day
+  },
+  advanced: {
+    database: {
+      generateId: () => crypto.randomUUID(),
     }
+  },
+  baseURL: process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+});
 
-    // Get individual enrollments
-    const enrollmentsQuery = groq`*[_type == "enrollment" && student._ref == $studentId] {
-      course->{
-        ...,
-        "slug": slug.current,
-        "category": category->{...},
-        "instructor": instructor->{...}
-      }
-    }`;
-
-    const enrollments = await client.fetch<EnrollmentWithCourse[]>(
-      enrollmentsQuery,
-      {
-        studentId: student._id,
-      }
-    );
-
-    const individualCourses: Course[] =
-      enrollments
-        ?.map((e: EnrollmentWithCourse) => e.course)
-        .filter((course): course is Course => course !== null) || [];
-
-    // Combine courses (remove duplicates)
-    if (individualCourses.length > 0) {
-      const courseIds = new Set(courses.map((c) => c._id));
-      const uniqueIndividualCourses = individualCourses.filter(
-        (c: Course) => !courseIds.has(c._id)
-      );
-      courses = [...courses, ...uniqueIndividualCourses];
-      accessType =
-        courses.length > individualCourses.length ? "both" : "individual";
-    }
-
-    return {
-      courses,
-      accessType,
-      organizationName,
-    };
-  } catch (error) {
-    console.error("Error getting user accessible courses:", error);
-    return {
-      courses: [],
-      accessType: "none" as const,
-    };
-  }
-}
+// Export types for TypeScript
+export type Session = typeof auth.$Infer.Session;
+export type User = typeof auth.$Infer.Session.user;
+export type Organization = typeof auth.$Infer.Organization;

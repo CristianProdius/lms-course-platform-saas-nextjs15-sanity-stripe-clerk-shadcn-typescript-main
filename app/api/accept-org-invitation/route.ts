@@ -1,187 +1,79 @@
 import { NextRequest, NextResponse } from "next/server";
-import { clerkClient } from "@clerk/nextjs/server";
-import { auth } from "@clerk/nextjs/server";
-import { client } from "@/sanity/lib/adminClient";
-import groq from "groq";
-
-interface ClerkError {
-  errors?: Array<{
-    code: string;
-    message: string;
-  }>;
-  message?: string;
-}
+import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { invitationId, userId } = body;
+    const { invitationId } = await request.json();
 
-    console.log("Accepting invitation:", { invitationId, userId });
-
-    if (!invitationId || !userId) {
-      return NextResponse.json(
-        { error: "Missing required fields" },
-        { status: 400 }
-      );
+    if (!invitationId) {
+      return NextResponse.json({
+        error: "Invitation ID is required",
+        success: false,
+      }, { status: 400 });
     }
 
-    // Get the authenticated user session
-    const { userId: authUserId } = await auth();
+    // Get session to verify the user is authenticated
+    const session = await auth.api.getSession({
+      headers: await headers(),
+    });
 
-    // Verify the user is authenticated and matches the userId
-    if (!authUserId || authUserId !== userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!session?.user) {
+      return NextResponse.json({
+        error: "Authentication required to accept invitation",
+        success: false,
+      }, { status: 401 });
     }
 
-    // Get the Clerk client
-    const clerk = await clerkClient();
+    // Accept the invitation using Better Auth
+    const result = await auth.api.organizationAcceptInvitation({
+      body: {
+        invitationId,
+      },
+      headers: await headers(),
+    });
 
-    try {
-      // Find the organization that has this invitation
-      const organizationsResponse =
-        await clerk.organizations.getOrganizationList({
-          limit: 100,
-        });
-
-      for (const org of organizationsResponse.data) {
-        try {
-          // Get invitations for this organization
-          const invitationsResponse =
-            await clerk.organizations.getOrganizationInvitationList({
-              organizationId: org.id,
-              limit: 100,
-            });
-
-          // Find the matching invitation
-          const invitation = invitationsResponse.data.find(
-            (inv) => inv.id === invitationId
-          );
-
-          if (invitation && invitation.status === "pending") {
-            // Add the user to the organization
-            await clerk.organizations.createOrganizationMembership({
-              organizationId: org.id,
-              userId: userId,
-              role: invitation.role || "org:member",
-            });
-
-            // Now ensure the student exists and associate with organization
-            try {
-              // First, get user details from Clerk
-              const clerkUser = await clerk.users.getUser(userId);
-
-              // Check if student exists
-              const existingStudentQuery = groq`*[_type == "student" && clerkId == $clerkId][0]`;
-              let student = await client.fetch(existingStudentQuery, {
-                clerkId: userId,
-              });
-
-              // Create student if doesn't exist
-              if (!student) {
-                student = await client.create({
-                  _type: "student",
-                  clerkId: userId,
-                  email:
-                    clerkUser.emailAddresses[0]?.emailAddress ||
-                    invitation.emailAddress,
-                  firstName: clerkUser.firstName || "",
-                  lastName: clerkUser.lastName || "",
-                  imageUrl: clerkUser.imageUrl || "",
-                  createdAt: new Date().toISOString(),
-                });
-                console.log("Created new student:", student._id);
-              }
-
-              // Find the organization in Sanity
-              const orgQuery = groq`*[_type == "organization" && clerkOrganizationId == $clerkOrgId][0]._id`;
-              const organizationRef = await client.fetch(orgQuery, {
-                clerkOrgId: org.id,
-              });
-
-              if (organizationRef) {
-                // Update the student with organization reference
-                await client
-                  .patch(student._id)
-                  .set({
-                    organization: {
-                      _type: "reference",
-                      _ref: organizationRef,
-                    },
-                    role:
-                      invitation.role === "org:admin" ? "admin" : "employee",
-                    acceptedDate: new Date().toISOString(),
-                    invitedDate: invitation.createdAt
-                      ? new Date(invitation.createdAt).toISOString()
-                      : new Date().toISOString(),
-                  })
-                  .commit();
-
-                console.log(
-                  "Student associated with organization successfully"
-                );
-              }
-            } catch (error) {
-              console.error(
-                "Failed to create/update student in Sanity:",
-                error
-              );
-              // Don't fail the whole operation if Sanity update fails
-            }
-
-            console.log(`User ${userId} added to organization ${org.id}`);
-
-            return NextResponse.json({
-              success: true,
-              organizationId: org.id,
-              organizationName: org.name,
-              role: invitation.role,
-            });
-          }
-        } catch (orgError) {
-          console.error(`Error processing organization ${org.id}:`, orgError);
-          continue;
-        }
-      }
-
-      // If we get here, the invitation wasn't found or wasn't pending
-      return NextResponse.json(
-        { error: "Invitation not found or already used" },
-        { status: 404 }
-      );
-    } catch (clerkError: unknown) {
-      console.error("Clerk API error:", clerkError);
-
-      // Check if user is already a member
-      if (
-        typeof clerkError === "object" &&
-        clerkError !== null &&
-        "errors" in clerkError &&
-        Array.isArray((clerkError as ClerkError).errors) &&
-        (clerkError as ClerkError).errors?.[0]?.code === "already_a_member"
-      ) {
-        return NextResponse.json({
-          success: true,
-          message: "User is already a member of this organization",
-        });
-      }
-
-      return NextResponse.json(
-        {
-          error:
-            typeof clerkError === "object" &&
-            clerkError !== null &&
-            "message" in clerkError
-              ? (clerkError as ClerkError).message
-              : "Failed to accept invitation",
-        },
-        { status: 500 }
-      );
+    if (!result) {
+      return NextResponse.json({
+        error: "Failed to accept invitation",
+        success: false,
+      }, { status: 400 });
     }
+
+    return NextResponse.json({
+      success: true,
+      member: result,
+      message: "Successfully joined organization",
+    });
   } catch (error) {
     console.error("Error accepting invitation:", error);
+
+    // Handle specific Better Auth errors
+    if (error instanceof Error) {
+      if (error.message.includes("not found")) {
+        return NextResponse.json({
+          error: "Invitation not found or expired",
+          success: false,
+        }, { status: 404 });
+      }
+      
+      if (error.message.includes("already accepted") || error.message.includes("already member")) {
+        return NextResponse.json({
+          error: "You are already a member of this organization",
+          success: false,
+        }, { status: 409 });
+      }
+
+      if (error.message.includes("expired")) {
+        return NextResponse.json({
+          error: "This invitation has expired",
+          success: false,
+        }, { status: 400 });
+      }
+    }
+
     return NextResponse.json(
-      { error: "An unexpected error occurred" },
+      { error: "Internal server error", success: false },
       { status: 500 }
     );
   }

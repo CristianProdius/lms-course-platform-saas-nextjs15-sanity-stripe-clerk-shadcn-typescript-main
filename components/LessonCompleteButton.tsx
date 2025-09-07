@@ -6,19 +6,17 @@ import { useState, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { completeLessonAction } from "@/app/actions/completeLessonAction";
 import { uncompleteLessonAction } from "@/app/actions/uncompleteLessonAction";
-import { getLessonCompletionStatusAction } from "@/app/actions/getLessonCompletionStatusAction";
+import { getLessonCompletionStatus } from "@/app/actions/getLessonCompletionStatusAction";
 import { cn } from "@/lib/utils";
 
 interface LessonCompleteButtonProps {
   lessonId: string;
-  clerkId: string;
   variant?: "default" | "compact" | "hero";
   className?: string;
 }
 
 export function LessonCompleteButton({
   lessonId,
-  clerkId,
   variant = "default",
   className,
 }: LessonCompleteButtonProps) {
@@ -30,30 +28,27 @@ export function LessonCompleteButton({
   useEffect(() => {
     startTransition(async () => {
       try {
-        const status = await getLessonCompletionStatusAction(lessonId, clerkId);
-        setIsCompleted(status);
+        const status = await getLessonCompletionStatus(lessonId);
+        setIsCompleted(status.isCompleted);
       } catch (error) {
         console.error("Error checking lesson completion status:", error);
         setIsCompleted(false);
       }
     });
-  }, [lessonId, clerkId]);
+  }, [lessonId]);
 
   const handleToggle = async () => {
     try {
       setIsPending(true);
       if (isCompleted) {
-        await uncompleteLessonAction(lessonId, clerkId);
+        await uncompleteLessonAction(lessonId);
       } else {
-        await completeLessonAction(lessonId, clerkId);
+        await completeLessonAction(lessonId);
       }
 
       startTransition(async () => {
-        const newStatus = await getLessonCompletionStatusAction(
-          lessonId,
-          clerkId
-        );
-        setIsCompleted(newStatus);
+        const newStatus = await getLessonCompletionStatus(lessonId);
+        setIsCompleted(newStatus.isCompleted);
       });
 
       router.refresh();

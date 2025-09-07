@@ -15,13 +15,29 @@ export default function Hero() {
     e.preventDefault();
     setIsSubmitting(true);
 
-    // Simulate API call - replace with your actual API endpoint
     try {
-      // await fetch('/api/subscribe', { method: 'POST', body: JSON.stringify({ email }) })
-      await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulated delay
-      setSubmitStatus("success");
-      setEmail("");
-    } catch {
+      const response = await fetch('/api/subscribe', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          email, 
+          source: 'hero' 
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setSubmitStatus("success");
+        setEmail("");
+      } else {
+        setSubmitStatus("error");
+        console.error("Subscription error:", data.error);
+      }
+    } catch (error) {
+      console.error("Network error:", error);
       setSubmitStatus("error");
     } finally {
       setIsSubmitting(false);

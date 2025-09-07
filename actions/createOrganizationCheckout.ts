@@ -2,9 +2,9 @@
 
 import stripe from "@/lib/stripe";
 import baseUrl from "@/lib/baseUrl";
-import { client } from "@/sanity/lib/adminClient";
-import { clerkClient } from "@clerk/nextjs/server";
-import groq from "groq";
+import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
 
 interface SubscriptionPlan {
   id: string;
@@ -59,43 +59,52 @@ const SUBSCRIPTION_PLANS: Record<string, SubscriptionPlan> = {
 
 interface CreateOrganizationCheckoutParams {
   organizationId: string;
-  userId: string;
   planId: "starter" | "professional" | "enterprise";
   employeeCount?: number;
 }
 
 export async function createOrganizationCheckout({
   organizationId,
-  userId,
   planId,
   employeeCount,
 }: CreateOrganizationCheckoutParams) {
   try {
-    // 1. Verify the user is authorized (should be org admin)
-    const clerkUser = await (await clerkClient()).users.getUser(userId);
-    const { emailAddresses, firstName, lastName } = clerkUser;
-    const email = emailAddresses[0]?.emailAddress;
+    // 1. Verify the user is authenticated and authorized
+    const authSession = await auth.api.getSession({
+      headers: await headers(),
+    });
 
-    if (!email) {
+    if (!authSession?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const userId = authSession.user.id;
+    const userEmail = authSession.user.email;
+
+    if (!userEmail) {
       throw new Error("User email not found");
     }
 
-    // 2. Get organization details from Sanity
-    const organizationQuery = groq`*[_type == "organization" && (_id == $organizationId || stripeCustomerId == $organizationId)][0] {
-      _id,
-      name,
-      billingEmail,
-      employeeLimit,
-      subscriptionStatus,
-      stripeCustomerId
-    }`;
-
-    const organization = await client.fetch(organizationQuery, {
-      organizationId,
+    // 2. Get organization details from Prisma and verify user is admin
+    const organization = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      include: {
+        members: {
+          where: {
+            userId: userId,
+          },
+        },
+      },
     });
 
     if (!organization) {
       throw new Error("Organization not found");
+    }
+
+    // Verify user is an admin of this organization
+    const userMembership = organization.members[0];
+    if (!userMembership || userMembership.role !== "admin") {
+      throw new Error("User is not authorized to manage this organization's subscription");
     }
 
     // 3. Get the selected plan details
@@ -105,8 +114,11 @@ export async function createOrganizationCheckout({
     }
 
     // 4. Calculate the actual employee count to use
-    const actualEmployeeCount =
-      employeeCount || organization.employeeLimit || selectedPlan.employeeLimit;
+    const currentMemberCount = await prisma.member.count({
+      where: { organizationId: organization.id },
+    });
+    
+    const actualEmployeeCount = employeeCount || Math.max(currentMemberCount, selectedPlan.employeeLimit);
 
     // 5. Check if employee count exceeds plan limit
     if (actualEmployeeCount > selectedPlan.employeeLimit) {
@@ -118,14 +130,14 @@ export async function createOrganizationCheckout({
     // 6. Create or retrieve Stripe customer
     let stripeCustomerId = organization.stripeCustomerId;
 
-    if (!stripeCustomerId || stripeCustomerId === organizationId) {
+    if (!stripeCustomerId) {
       // Create a new Stripe customer
-      const customer = await stripe.customers.create({
-        email: organization.billingEmail || email,
+      const customer = await stripe().customers.create({
+        email: organization.billingEmail || userEmail,
         name: organization.name,
         metadata: {
-          organizationId: organization._id,
-          clerkUserId: userId,
+          organizationId: organization.id,
+          userId: userId,
           organizationName: organization.name,
         },
       });
@@ -133,16 +145,16 @@ export async function createOrganizationCheckout({
       stripeCustomerId = customer.id;
 
       // Update organization with Stripe customer ID
-      await client
-        .patch(organization._id)
-        .set({ stripeCustomerId: customer.id })
-        .commit();
+      await prisma.organization.update({
+        where: { id: organization.id },
+        data: { stripeCustomerId: customer.id },
+      });
     }
 
     // 7. Create Stripe Price object for the subscription
     // In production, you'd typically have these pre-created in Stripe Dashboard
     // For now, we'll create them dynamically
-    const price = await stripe.prices.create({
+    const price = await stripe().prices.create({
       currency: "usd",
       unit_amount: selectedPlan.pricePerMonth * 100, // Convert to cents
       recurring: {
@@ -158,7 +170,7 @@ export async function createOrganizationCheckout({
     });
 
     // 8. Create Stripe Checkout Session for subscription (NO TRIAL)
-    const session = await stripe.checkout.sessions.create({
+    const checkoutSession = await stripe().checkout.sessions.create({
       customer: stripeCustomerId,
       line_items: [
         {
@@ -171,7 +183,7 @@ export async function createOrganizationCheckout({
       billing_address_collection: "required",
       subscription_data: {
         metadata: {
-          organizationId: organization._id,
+          organizationId: organization.id,
           userId: userId,
           planId: selectedPlan.id,
           employeeLimit: actualEmployeeCount.toString(),
@@ -179,14 +191,14 @@ export async function createOrganizationCheckout({
         // NO TRIAL PERIOD - removed trial_period_days
       },
       metadata: {
-        organizationId: organization._id,
+        organizationId: organization.id,
         userId: userId,
         planId: selectedPlan.id,
         employeeLimit: actualEmployeeCount.toString(),
         organizationName: organization.name,
       },
-      success_url: `${baseUrl}/dashboard/organization/subscription?success=true&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${baseUrl}/subscription-plans?canceled=true`,
+      success_url: `${baseUrl}/dashboard/organization/billing?success=true&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl}/dashboard/organization/billing?canceled=true`,
       // Allow promotion codes
       allow_promotion_codes: true,
       // Collect tax automatically if configured in Stripe
@@ -203,7 +215,7 @@ export async function createOrganizationCheckout({
         invoice_data: {
           description: `Subscription for ${organization.name} - ${actualEmployeeCount} employees`,
           metadata: {
-            organizationId: organization._id,
+            organizationId: organization.id,
             planId: selectedPlan.id,
           },
           custom_fields: [
@@ -218,8 +230,8 @@ export async function createOrganizationCheckout({
 
     // 9. Return checkout session URL
     return {
-      url: session.url,
-      sessionId: session.id,
+      url: checkoutSession.url,
+      sessionId: checkoutSession.id,
     };
   } catch (error) {
     console.error("Error in createOrganizationCheckout:", error);
@@ -242,16 +254,42 @@ export async function updateOrganizationSubscription({
   newEmployeeCount?: number;
 }) {
   try {
+    const authSession = await auth.api.getSession({
+      headers: await headers(),
+    });
+
+    if (!authSession?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
     const newPlan = SUBSCRIPTION_PLANS[newPlanId];
     if (!newPlan) {
       throw new Error("Invalid subscription plan");
     }
 
     // Get current subscription
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    const subscription = await stripe().subscriptions.retrieve(subscriptionId);
+    const organizationId = subscription.metadata.organizationId;
+
+    if (!organizationId) {
+      throw new Error("Organization ID not found in subscription metadata");
+    }
+
+    // Verify user is admin of the organization
+    const member = await prisma.member.findFirst({
+      where: {
+        userId: authSession.user.id,
+        organizationId: organizationId,
+        role: "admin",
+      },
+    });
+
+    if (!member) {
+      throw new Error("User is not authorized to manage this organization's subscription");
+    }
 
     // Create new price
-    const newPrice = await stripe.prices.create({
+    const newPrice = await stripe().prices.create({
       currency: "usd",
       unit_amount: newPlan.pricePerMonth * 100,
       recurring: {
@@ -267,7 +305,7 @@ export async function updateOrganizationSubscription({
     });
 
     // Update subscription
-    const updatedSubscription = await stripe.subscriptions.update(
+    const updatedSubscription = await stripe().subscriptions.update(
       subscriptionId,
       {
         items: [
@@ -285,32 +323,14 @@ export async function updateOrganizationSubscription({
       }
     );
 
-    // Update subscription in Sanity
-    const subscriptionQuery = groq`*[_type == "subscription" && stripeSubscriptionId == $subscriptionId][0]`;
-    const subscriptionDoc = await client.fetch(subscriptionQuery, {
-      subscriptionId,
+    // Update organization in Prisma
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: {
+        subscriptionPlan: newPlan.id,
+        stripeSubscriptionId: subscriptionId,
+      },
     });
-
-    if (subscriptionDoc) {
-      await client
-        .patch(subscriptionDoc._id)
-        .set({
-          plan: newPlan.id,
-          employeeLimit: newEmployeeCount || newPlan.employeeLimit,
-          pricePerMonth: newPlan.pricePerMonth,
-        })
-        .commit();
-
-      // Also update organization
-      if (subscriptionDoc.organization?._ref) {
-        await client
-          .patch(subscriptionDoc.organization._ref)
-          .set({
-            employeeLimit: newEmployeeCount || newPlan.employeeLimit,
-          })
-          .commit();
-      }
-    }
 
     return {
       success: true,
@@ -327,40 +347,51 @@ export async function updateOrganizationSubscription({
 // Helper function to cancel subscription
 export async function cancelOrganizationSubscription(subscriptionId: string) {
   try {
+    const authSession = await auth.api.getSession({
+      headers: await headers(),
+    });
+
+    if (!authSession?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    // Get current subscription
+    const subscription = await stripe().subscriptions.retrieve(subscriptionId);
+    const organizationId = subscription.metadata.organizationId;
+
+    if (!organizationId) {
+      throw new Error("Organization ID not found in subscription metadata");
+    }
+
+    // Verify user is admin of the organization
+    const member = await prisma.member.findFirst({
+      where: {
+        userId: authSession.user.id,
+        organizationId: organizationId,
+        role: "admin",
+      },
+    });
+
+    if (!member) {
+      throw new Error("User is not authorized to manage this organization's subscription");
+    }
+
     // Cancel at period end (allows access until the end of billing period)
-    const subscription = await stripe.subscriptions.update(subscriptionId, {
+    const cancelledSubscription = await stripe().subscriptions.update(subscriptionId, {
       cancel_at_period_end: true,
     });
 
-    // Update subscription status in Sanity
-    const subscriptionQuery = groq`*[_type == "subscription" && stripeSubscriptionId == $subscriptionId][0]`;
-    const subscriptionDoc = await client.fetch(subscriptionQuery, {
-      subscriptionId,
+    // Update organization status in Prisma
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: {
+        subscriptionStatus: "canceled",
+      },
     });
-
-    if (subscriptionDoc) {
-      await client
-        .patch(subscriptionDoc._id)
-        .set({
-          status: "cancelled",
-          cancelledAt: new Date().toISOString(),
-        })
-        .commit();
-
-      // Also update organization status
-      if (subscriptionDoc.organization?._ref) {
-        await client
-          .patch(subscriptionDoc.organization._ref)
-          .set({
-            subscriptionStatus: "cancelled",
-          })
-          .commit();
-      }
-    }
 
     return {
       success: true,
-      cancelAt: subscription.cancel_at,
+      cancelAt: cancelledSubscription.cancel_at,
     };
   } catch (error) {
     console.error("Error canceling subscription:", error);
@@ -373,14 +404,41 @@ export async function cancelOrganizationSubscription(subscriptionId: string) {
 // Helper function to get subscription portal URL
 export async function getCustomerPortalUrl(customerId: string) {
   try {
-    const session = await stripe.billingPortal.sessions.create({
-      customer: customerId,
-      return_url: `${baseUrl}/dashboard/organization/subscription`,
+    const authSession = await auth.api.getSession({
+      headers: await headers(),
     });
 
-    return session.url;
+    if (!authSession?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    // Verify user has access to this customer
+    const organization = await prisma.organization.findFirst({
+      where: {
+        stripeCustomerId: customerId,
+        members: {
+          some: {
+            userId: authSession.user.id,
+            role: "admin",
+          },
+        },
+      },
+    });
+
+    if (!organization) {
+      throw new Error("User is not authorized to access this customer portal");
+    }
+
+    const portalSession = await stripe().billingPortal.sessions.create({
+      customer: customerId,
+      return_url: `${baseUrl}/dashboard/organization/billing`,
+    });
+
+    return portalSession.url;
   } catch (error) {
     console.error("Error creating customer portal session:", error);
     throw new Error("Failed to create customer portal session");
   }
 }
+
+export default createOrganizationCheckout;

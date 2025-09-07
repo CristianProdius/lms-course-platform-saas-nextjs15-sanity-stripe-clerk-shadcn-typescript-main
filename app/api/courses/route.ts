@@ -1,63 +1,97 @@
 // app/api/courses/route.ts
 import { NextResponse } from "next/server";
-import { client } from "@/sanity/lib/client";
+import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   try {
-    // Fetch all courses from Sanity with their details matching your schema
-    const query = `*[_type == "course"] {
-      _id,
-      title,
-      slug,
-      description,
-      image {
-        asset-> {
-          url
-        }
+    // Fetch all published courses with their details
+    const courses = await prisma.course.findMany({
+      where: {
+        isPublished: true,
       },
-      category-> {
-        _id,
-        title
+      include: {
+        category: {
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+          },
+        },
+        instructor: {
+          select: {
+            id: true,
+            name: true,
+            bio: true,
+            imageUrl: true,
+          },
+        },
+        modules: {
+          orderBy: {
+            orderIndex: 'asc',
+          },
+          include: {
+            lessons: {
+              orderBy: {
+                orderIndex: 'asc',
+              },
+              select: {
+                id: true,
+                title: true,
+                duration: true,
+                isFree: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            enrollments: true,
+          },
+        },
       },
-      instructor-> {
-        name,
-        bio,
-        photo {
-          asset-> {
-            url
-          }
-        }
+      orderBy: {
+        createdAt: 'desc',
       },
-      individualPrice,
-      organizationPrice,
-      isFree,
-      modules[]-> {
-        _id,
-        title,
-        description,
-        videoUrl,
-        duration
-      },
-      learningObjectives,
-      requirements,
-      level,
-      featured,
-      publishedAt
-    } | order(publishedAt desc)`;
+    });
 
-    const courses = await client.fetch(query);
+    // Transform the data to match expected frontend format
+    const transformedCourses = courses.map(course => ({
+      id: course.id,
+      title: course.title,
+      slug: course.slug,
+      description: course.description,
+      thumbnail: course.thumbnail,
+      category: course.category,
+      instructor: course.instructor,
+      price: course.price,
+      currency: course.currency,
+      isFree: course.isFree,
+      level: course.level,
+      duration: course.duration,
+      objectives: course.objectives,
+      prerequisites: course.prerequisites,
+      tags: course.tags,
+      modules: course.modules.map(module => ({
+        id: module.id,
+        title: module.title,
+        description: module.description,
+        lessons: module.lessons,
+      })),
+      enrollmentCount: course._count.enrollments,
+      createdAt: course.createdAt,
+      updatedAt: course.updatedAt,
+    }));
 
     return NextResponse.json({
-      courses: courses || [],
+      courses: transformedCourses,
       success: true,
     });
   } catch (error) {
-    console.error("Error fetching courses from Sanity:", error);
+    console.error("Error fetching courses:", error);
 
-    // Return a more detailed error for debugging
     return NextResponse.json(
       {
-        error: "Failed to fetch courses from Sanity",
+        error: "Failed to fetch courses",
         details: error instanceof Error ? error.message : "Unknown error",
         courses: [],
         success: false,

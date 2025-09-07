@@ -1,238 +1,297 @@
-import { getCourses } from "@/sanity/lib/courses/getCourses";
-import { CourseCard } from "@/components/CourseCard";
-import { currentUser } from "@clerk/nextjs/server";
-import { getStudentByClerkId } from "@/sanity/lib/student/getStudentByClerkId";
-import { getCourseProgress } from "@/sanity/lib/lessons/getCourseProgress";
-import { client } from "@/sanity/lib/adminClient";
-import groq from "groq";
-import { Sparkles, Building2, Play } from "lucide-react";
-import Link from "next/link";
-
+import { Suspense } from "react";
+import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import SearchBar from "@/components/SearchBar";
+import { Skeleton } from "@/components/ui/skeleton";
+import { BookOpen, Clock, Users, Star, Filter, Search } from "lucide-react";
+import Link from "next/link";
+import { Input } from "@/components/ui/input";
+import { CourseCard } from "@/components/CourseCard";
 
-// Define types for better type safety
-interface CourseWithRef {
-  course?: {
-    _id: string;
+interface CourseWithDetails {
+  id: string;
+  title: string;
+  slug: string;
+  description: string;
+  thumbnail: string | null;
+  price: number;
+  currency: string;
+  level: string | null;
+  duration: number | null;
+  isFree: boolean;
+  isPublished: boolean;
+  createdAt: Date;
+  category: {
+    title: string;
+    slug: string;
+  } | null;
+  instructor: {
+    name: string;
+    imageUrl: string | null;
+  } | null;
+  _count: {
+    enrollments: number;
+    modules: number;
   };
+  averageRating?: number;
 }
 
-export default async function CoursesPage() {
-  const user = await currentUser();
-
-  // Get all courses
-  const courses = await getCourses();
-
-  // Get user's enrollment and organization data if logged in
-  let enrolledCourseIds: string[] = [];
-  let hasOrgAccess = false;
-  let organizationName: string | null = null;
-  const courseProgressMap: Record<string, number> = {};
-
-  if (user?.id) {
-    // Get student data
-    const studentResult = await getStudentByClerkId(user.id);
-    const student = studentResult?.data;
-
-    if (student) {
-      // Check organization access
-      if (student.organization) {
-        const orgQuery = groq`*[_type == "organization" && _id == $orgId][0] {
-          name,
-          subscriptionStatus,
-          stripeCustomerId
-        }`;
-
-        const orgData = await client.fetch(orgQuery, {
-          orgId: student.organization._ref,
-        });
-
-        // Only give access if org has active paid subscription
-        if (
-          orgData?.subscriptionStatus === "active" &&
-          orgData?.stripeCustomerId
-        ) {
-          hasOrgAccess = true;
-          organizationName = orgData.name;
-        }
-      }
-
-      // Get individual enrollments
-      const enrollmentsQuery = groq`*[_type == "enrollment" && student._ref == $studentId] {
-        course->{_id}
-      }`;
-
-      const enrollments = await client.fetch<CourseWithRef[]>(
-        enrollmentsQuery,
-        {
-          studentId: student._id,
-        }
-      );
-
-      enrolledCourseIds =
-        (enrollments
-          ?.map((e: CourseWithRef) => e.course?._id)
-          .filter(Boolean) as string[]) || [];
-    }
-
-    // Get progress for all courses the user has access to
-    const accessibleCourseIds = hasOrgAccess
-      ? courses.map((c) => c._id)
-      : enrolledCourseIds;
-
-    for (const courseId of accessibleCourseIds) {
-      try {
-        const progress = await getCourseProgress(user.id, courseId);
-        courseProgressMap[courseId] = progress.courseProgress;
-      } catch (error) {
-        console.error(`Error fetching progress for course ${courseId}:`, error);
-      }
-    }
-  }
-
-  // Helper function to check if user has access to a course
-  const hasAccessToCourse = (courseId: string) => {
-    return enrolledCourseIds.includes(courseId) || hasOrgAccess;
+async function getCourses(searchTerm?: string, category?: string, level?: string): Promise<CourseWithDetails[]> {
+  const whereClause: any = {
+    isPublished: true,
   };
 
+  if (searchTerm) {
+    whereClause.OR = [
+      { title: { contains: searchTerm, mode: 'insensitive' } },
+      { description: { contains: searchTerm, mode: 'insensitive' } },
+    ];
+  }
+
+  if (category) {
+    whereClause.category = {
+      slug: category,
+    };
+  }
+
+  if (level) {
+    whereClause.level = level;
+  }
+
+  const courses = await prisma.course.findMany({
+    where: whereClause,
+    include: {
+      category: {
+        select: {
+          title: true,
+          slug: true,
+        },
+      },
+      instructor: {
+        select: {
+          name: true,
+          imageUrl: true,
+        },
+      },
+      _count: {
+        select: {
+          enrollments: true,
+          modules: true,
+        },
+      },
+    },
+    orderBy: [
+      { createdAt: 'desc' },
+    ],
+  });
+
+  return courses;
+}
+
+async function getCategories() {
+  return await prisma.category.findMany({
+    select: {
+      title: true,
+      slug: true,
+      _count: {
+        select: {
+          courses: {
+            where: {
+              isPublished: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: {
+      title: 'asc',
+    },
+  });
+}
+
+function CoursesLoading() {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-950">
-      {/* Hero Section */}
-      <div className="relative bg-gradient-to-br from-[#2A4666] via-[#2A4666]/90 to-[#FF4A1C]/80 text-white">
-        <div className="absolute inset-0 bg-grid-white/[0.05] bg-[size:32px_32px]" />
-        <div className="relative">
-          <div className="container mx-auto px-4 py-16 lg:py-24">
-            <div className="max-w-4xl mx-auto text-center">
-              <Badge className="mb-4 bg-white/20 text-white border-white/30 px-4 py-1">
-                <Sparkles className="h-3 w-3 mr-1" />
-                Transform Your Team with AI
-              </Badge>
-              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
-                Master AI Skills in{" "}
-                <span className="text-[#B9FF66]">5 Days</span>
-              </h1>
-              <p className="text-lg md:text-xl text-white/90 mb-8 max-w-2xl mx-auto">
-                Join thousands of professionals learning practical AI skills
-                through hands-on courses designed for real-world application.
-              </p>
-
-              {/* Search Bar */}
-              <div className="max-w-2xl mx-auto mb-8">
-                <SearchBar />
-              </div>
-
-              {/* Stats */}
-              <div className="grid grid-cols-3 gap-8 max-w-2xl mx-auto">
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-[#B9FF66]">10K+</div>
-                  <div className="text-sm text-white/80">Active Learners</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-[#B9FF66]">95%</div>
-                  <div className="text-sm text-white/80">Completion Rate</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-[#B9FF66]">4.9/5</div>
-                  <div className="text-sm text-white/80">Average Rating</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+    <div className="container mx-auto px-4 py-8">
+      <div className="mb-8">
+        <Skeleton className="h-12 w-80 mb-4" />
+        <Skeleton className="h-6 w-96" />
       </div>
-
-      {/* Main Content */}
-      <div className="container mx-auto px-4 py-12">
-        {/* Organization Access Banner */}
-        {hasOrgAccess && organizationName && (
-          <div className="mb-8 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-            <div className="flex items-center gap-3">
-              <Building2 className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-              <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                You have full access to all courses through your{" "}
-                {organizationName} membership
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* All Courses Section */}
-        <div className="space-y-8">
-          <div className="flex items-center justify-between">
-            <h2 className="text-3xl font-bold">All Courses</h2>
-            <p className="text-muted-foreground">
-              {courses.length} courses available
-            </p>
-          </div>
-
-          {/* Courses Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {courses.map((course) => {
-              const isEnrolled = hasAccessToCourse(course._id);
-              const isOrgAccess =
-                hasOrgAccess && !enrolledCourseIds.includes(course._id);
-
-              return (
-                <div key={course._id} className="relative">
-                  {isOrgAccess && (
-                    <Badge className="absolute top-4 right-4 z-10 bg-blue-600 text-white">
-                      <Building2 className="h-3 w-3 mr-1" />
-                      Organization Access
-                    </Badge>
-                  )}
-                  <CourseCard
-                    course={course}
-                    progress={
-                      isEnrolled ? courseProgressMap[course._id] : undefined
-                    }
-                    href={
-                      isEnrolled
-                        ? `/dashboard/courses/${course._id}`
-                        : `/courses/${course.slug}`
-                    }
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* CTA Section */}
-        <div className="mt-16 bg-gradient-to-br from-[#2A4666] to-[#FF4A1C] rounded-2xl p-8 md:p-12 text-white text-center">
-          <h3 className="text-2xl md:text-3xl font-bold mb-4">
-            Ready to Transform Your Team with AI?
-          </h3>
-          <p className="text-lg text-white/90 mb-8 max-w-2xl mx-auto">
-            Join leading organizations that have upskilled their workforce with
-            our practical AI courses.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button
-              size="lg"
-              className="bg-white text-[#2A4666] hover:bg-gray-100"
-              asChild
-            >
-              <Link href="/organization-signup">
-                <Building2 className="h-5 w-5 mr-2" />
-                Start Organization Trial
-              </Link>
-            </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              className="border-white text-white hover:bg-white/10"
-              asChild
-            >
-              <Link href="/sign-up">
-                <Play className="h-5 w-5 mr-2" />
-                Start Learning Now
-              </Link>
-            </Button>
-          </div>
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Card key={i}>
+            <CardHeader>
+              <Skeleton className="h-40 w-full mb-4" />
+              <Skeleton className="h-6 w-full" />
+              <Skeleton className="h-4 w-3/4" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-16 w-full mb-4" />
+              <div className="flex justify-between items-center">
+                <Skeleton className="h-6 w-20" />
+                <Skeleton className="h-10 w-24" />
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
     </div>
+  );
+}
+
+interface CoursesContentProps {
+  searchParams: { [key: string]: string | string[] | undefined };
+}
+
+async function CoursesContent({ searchParams }: CoursesContentProps) {
+  const searchTerm = typeof searchParams.search === 'string' ? searchParams.search : undefined;
+  const category = typeof searchParams.category === 'string' ? searchParams.category : undefined;
+  const level = typeof searchParams.level === 'string' ? searchParams.level : undefined;
+
+  const [courses, categories] = await Promise.all([
+    getCourses(searchTerm, category, level),
+    getCategories(),
+  ]);
+
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+
+  const levels = ['beginner', 'intermediate', 'advanced'];
+
+  return (
+    <div className="container mx-auto px-4 py-8">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">
+          Course Catalog
+        </h1>
+        <p className="text-xl text-gray-600 dark:text-gray-400">
+          Explore our comprehensive collection of professional courses
+        </p>
+      </div>
+
+      {/* Search and Filters */}
+      <div className="mb-8 space-y-4">
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Search courses..."
+              className="pl-10"
+              defaultValue={searchTerm}
+              name="search"
+            />
+          </div>
+          <div className="flex gap-2">
+            <select 
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-background"
+              defaultValue={category || ''}
+              name="category"
+            >
+              <option value="">All Categories</option>
+              {categories.map((cat) => (
+                <option key={cat.slug} value={cat.slug}>
+                  {cat.title} ({cat._count.courses})
+                </option>
+              ))}
+            </select>
+            <select 
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-background"
+              defaultValue={level || ''}
+              name="level"
+            >
+              <option value="">All Levels</option>
+              {levels.map((lvl) => (
+                <option key={lvl} value={lvl}>
+                  {lvl.charAt(0).toUpperCase() + lvl.slice(1)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Results Summary */}
+      <div className="mb-6">
+        <p className="text-gray-600 dark:text-gray-400">
+          Found {courses.length} course{courses.length !== 1 ? 's' : ''}
+          {searchTerm && ` for "${searchTerm}"`}
+          {category && ` in ${categories.find(c => c.slug === category)?.title}`}
+          {level && ` at ${level} level`}
+        </p>
+      </div>
+
+      {/* Courses Grid */}
+      {courses.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {courses.map((course) => (
+            <CourseCard 
+              key={course.id} 
+              course={course} 
+              isAuthenticated={!!session?.user}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-12">
+          <div className="w-24 h-24 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
+            <BookOpen className="h-12 w-12 text-gray-400" />
+          </div>
+          <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+            No courses found
+          </h3>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">
+            Try adjusting your search or filters to find courses.
+          </p>
+          <Button asChild>
+            <Link href="/courses">
+              Browse All Courses
+            </Link>
+          </Button>
+        </div>
+      )}
+
+      {/* Call to Action for Organizations */}
+      {!session?.user && (
+        <div className="mt-16 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg p-8">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
+              Ready to get started?
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              Join an organization to access these professional courses and track your team's progress.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Button asChild size="lg">
+                <Link href="/sign-up">
+                  Get Started
+                </Link>
+              </Button>
+              <Button asChild variant="outline" size="lg">
+                <Link href="/organization-signup">
+                  Create Organization
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default async function CoursesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const params = await searchParams;
+  return (
+    <Suspense fallback={<CoursesLoading />}>
+      <CoursesContent searchParams={params} />
+    </Suspense>
   );
 }

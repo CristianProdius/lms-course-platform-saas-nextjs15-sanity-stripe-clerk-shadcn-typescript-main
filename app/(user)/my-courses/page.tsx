@@ -1,72 +1,64 @@
-import { currentUser } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
-import { getEnrolledCourses } from "@/sanity/lib/student/getEnrolledCourses";
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { Building2, AlertCircle } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { GraduationCap } from "lucide-react";
-import { getCourseProgress } from "@/sanity/lib/lessons/getCourseProgress";
-import { CourseCard } from "@/components/CourseCard";
 
-export default async function MyCoursesPage() {
-  const user = await currentUser();
+// Redirect personal courses to organization courses
+export default function MyCoursesRedirect() {
+  const router = useRouter();
 
-  if (!user?.id) {
-    return redirect("/");
-  }
+  useEffect(() => {
+    // Automatically redirect after 3 seconds
+    const timer = setTimeout(() => {
+      router.push("/dashboard/courses");
+    }, 3000);
 
-  const enrolledCourses = await getEnrolledCourses(user.id);
-
-  const coursesWithProgress = await Promise.all(
-    enrolledCourses.map(async (enrollment) => {
-      const { course } = enrollment;
-      if (!course) return null;
-
-      const progress = await getCourseProgress(user.id, course._id);
-      return {
-        course,
-        progress: progress.courseProgress,
-      };
-    })
-  ).then((results) => results.filter(Boolean));
+    return () => clearTimeout(timer);
+  }, [router]);
 
   return (
-    <div className="h-full pt-16">
-      <div className="container mx-auto px-4 py-8">
-        <div className="flex items-center gap-4 mb-8">
-          <GraduationCap className="h-8 w-8 text-primary" />
-          <h1 className="text-3xl font-bold">My Courses</h1>
-        </div>
-
-        {enrolledCourses.length === 0 ? (
-          <div className="text-center py-12">
-            <h2 className="text-2xl font-semibold mb-4">No courses yet</h2>
-            <p className="text-muted-foreground mb-8">
-              You haven&apos;t enrolled in any courses yet. Browse our courses
-              to get started!
-            </p>
-            <Link
-              href="/"
-              prefetch={false}
-              className="inline-flex items-center justify-center rounded-lg px-6 py-3 font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              Browse Courses
-            </Link>
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        <Card className="p-6 shadow-xl">
+          <div className="text-center space-y-4">
+            <div className="w-16 h-16 bg-gradient-to-br from-[#FF4A1C]/20 to-[#2A4666]/20 rounded-full flex items-center justify-center mx-auto">
+              <Building2 className="h-8 w-8 text-[#FF4A1C]" />
+            </div>
+            
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+              Redirecting to Organization Courses
+            </h1>
+            
+            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-blue-700 dark:text-blue-300">
+                  <p className="font-medium mb-1">Platform Update</p>
+                  <p>
+                    This platform now operates on a B2B model. All courses are managed 
+                    at the organization level rather than individual accounts.
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Redirecting you to your organization's courses in 3 seconds...
+              </p>
+              
+              <Link href="/dashboard/courses">
+                <Button className="w-full bg-gradient-to-r from-[#2A4666] to-[#FF4A1C] hover:opacity-90">
+                  Go to Organization Courses Now
+                </Button>
+              </Link>
+            </div>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {coursesWithProgress.map((item) => {
-              if (!item || !item.course) return null;
-
-              return (
-                <CourseCard
-                  key={item.course._id}
-                  course={item.course}
-                  progress={item.progress}
-                  href={`/dashboard/courses/${item.course._id}`}
-                />
-              );
-            })}
-          </div>
-        )}
+        </Card>
       </div>
     </div>
   );

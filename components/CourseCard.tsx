@@ -3,101 +3,148 @@
 import Image from "next/image";
 import Link from "next/link";
 import { BookOpen } from "lucide-react";
-import { urlFor } from "@/sanity/lib/image";
 import { Loader } from "@/components/ui/loader";
 import { CourseProgress } from "@/components/CourseProgress";
-import {
-  GetCoursesQueryResult,
-  GetEnrolledCoursesQueryResult,
-} from "@/sanity.types";
 
 interface CourseCardProps {
-  course:
-    | GetCoursesQueryResult[number]
-    | NonNullable<
-        NonNullable<GetEnrolledCoursesQueryResult>["enrolledCourses"][number]["course"]
-      >;
+  course: {
+    id: string;
+    title: string;
+    slug: string;
+    description?: string;
+    thumbnail?: string;
+    price?: number;
+    currency?: string;
+    isFree?: boolean;
+    level?: string;
+    duration?: number;
+    instructor?: {
+      name: string;
+      imageUrl?: string;
+    };
+    category?: {
+      title: string;
+    };
+    enrollmentCount?: number;
+  };
+  showProgress?: boolean;
   progress?: number;
-  href: string;
+  loading?: boolean;
 }
 
-export function CourseCard({ course, progress, href }: CourseCardProps) {
+export function CourseCard({
+  course,
+  showProgress = false,
+  progress = 0,
+  loading = false,
+}: CourseCardProps) {
+  if (loading) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden animate-pulse">
+        <div className="aspect-video bg-gray-200 dark:bg-gray-700" />
+        <div className="p-6">
+          <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded mb-2" />
+          <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-4" />
+          <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/2" />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <Link
-      href={href}
-      prefetch={false}
-      className="group hover:no-underline flex"
-    >
-      <div className="bg-card rounded-xl overflow-hidden shadow-lg transition-all duration-300 ease-in-out hover:shadow-xl hover:translate-y-[-4px] border border-border flex flex-col flex-1">
-        <div className="relative h-52 w-full overflow-hidden">
-          {course.image ? (
+    <Link href={`/courses/${course.slug}`}>
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-300 cursor-pointer">
+        {/* Course Image */}
+        <div className="aspect-video relative">
+          {course.thumbnail ? (
             <Image
-              src={urlFor(course.image).url() || ""}
-              alt={course.title || "Course Image"}
+              src={course.thumbnail}
+              alt={course.title}
               fill
-              className="object-cover transition-transform duration-300 group-hover:scale-110"
+              className="object-cover"
+              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
             />
           ) : (
-            <div className="h-full w-full flex items-center justify-center bg-muted">
-              <Loader size="lg" />
+            <div className="w-full h-full bg-gradient-to-br from-[#FF4A1C] to-[#2A4666] flex items-center justify-center">
+              <BookOpen className="h-12 w-12 text-white" />
             </div>
           )}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent opacity-60 group-hover:opacity-80 transition-opacity duration-300" />
-          <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-            <span className="text-sm font-medium px-3 py-1 bg-black/50 text-white rounded-full backdrop-blur-sm">
-              {course.category?.name || "Uncategorized"}
-            </span>
-            {"price" in course && typeof course.price === "number" && (
-              <span className="text-white font-bold px-3 py-1 bg-black/50 dark:bg-white/20 rounded-full backdrop-blur-sm">
-                {course.price === 0
-                  ? "Free"
-                  : `$${course.price.toLocaleString("en-US", {
-                      minimumFractionDigits: 2,
-                    })}`}
-              </span>
-            )}
-          </div>
         </div>
-        <div className="p-6 flex flex-col flex-1">
-          <h3 className="text-xl font-bold mb-2 group-hover:text-primary transition-colors duration-300">
+
+        {/* Course Content */}
+        <div className="p-6">
+          {/* Category */}
+          {course.category && (
+            <div className="mb-2">
+              <span className="inline-block px-2 py-1 text-xs font-semibold text-[#FF4A1C] bg-[#FF4A1C]/10 rounded-full">
+                {course.category.title}
+              </span>
+            </div>
+          )}
+
+          {/* Title */}
+          <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2 line-clamp-2">
             {course.title}
           </h3>
-          <p className="text-muted-foreground mb-4 line-clamp-2 flex-1">
-            {course.description}
-          </p>
-          <div className="space-y-4 mt-auto">
-            {course.instructor && (
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  {course.instructor.photo ? (
-                    <div className="relative h-8 w-8 mr-2">
-                      <Image
-                        src={urlFor(course.instructor.photo).url() || ""}
-                        alt={course.instructor.name || "Instructor"}
-                        fill
-                        className="rounded-full object-cover"
-                      />
-                    </div>
-                  ) : (
-                    <div className="h-8 w-8 mr-2 rounded-full bg-muted flex items-center justify-center">
-                      <Loader size="sm" />
-                    </div>
-                  )}
-                  <span className="text-sm text-muted-foreground">
-                    by {course.instructor.name}
-                  </span>
-                </div>
-                <BookOpen className="h-4 w-4 text-muted-foreground" />
-              </div>
-            )}
-            {typeof progress === "number" && (
-              <CourseProgress
-                progress={progress}
-                variant="default"
-                size="sm"
-                label="Course Progress"
-              />
-            )}
+
+          {/* Description */}
+          {course.description && (
+            <p className="text-gray-600 dark:text-gray-300 text-sm mb-4 line-clamp-2">
+              {course.description}
+            </p>
+          )}
+
+          {/* Instructor */}
+          {course.instructor && (
+            <div className="flex items-center mb-4">
+              {course.instructor.imageUrl ? (
+                <Image
+                  src={course.instructor.imageUrl}
+                  alt={course.instructor.name}
+                  width={24}
+                  height={24}
+                  className="rounded-full mr-2"
+                />
+              ) : (
+                <div className="w-6 h-6 bg-gray-300 rounded-full mr-2" />
+              )}
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                {course.instructor.name}
+              </span>
+            </div>
+          )}
+
+          {/* Progress Bar */}
+          {showProgress && (
+            <div className="mb-4">
+              <CourseProgress progress={progress} />
+            </div>
+          )}
+
+          {/* Course Details */}
+          <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
+            <div className="flex items-center space-x-4">
+              {course.level && (
+                <span className="capitalize">{course.level}</span>
+              )}
+              {course.duration && (
+                <span>{Math.round(course.duration / 60)}h</span>
+              )}
+            </div>
+            
+            {/* Price */}
+            <div className="text-right">
+              {course.isFree ? (
+                <span className="text-green-600 dark:text-green-400 font-semibold">
+                  Free
+                </span>
+              ) : (
+                <span className="text-gray-900 dark:text-white font-semibold">
+                  {course.currency === 'USD' ? '$' : course.currency}
+                  {course.price}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>

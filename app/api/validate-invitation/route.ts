@@ -1,165 +1,166 @@
-// app/api/validate-invitation/route.ts
-// THIS FILE MUST BE AT EXACTLY THIS PATH
-
 import { NextRequest, NextResponse } from "next/server";
-import { clerkClient } from "@clerk/nextjs/server";
-
-interface ClerkError {
-  errors?: Array<{
-    code: string;
-    message: string;
-  }>;
-  message?: string;
-}
+import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { invitationTicket } = body;
+    const { invitationId, token } = await request.json();
 
-    console.log("Received invitation ticket:", invitationTicket);
-
-    if (!invitationTicket) {
-      return NextResponse.json(
-        { error: "Invitation ticket is required" },
-        { status: 400 }
-      );
+    if (!invitationId && !token) {
+      return NextResponse.json({
+        error: "Invitation ID or token is required",
+        success: false,
+      }, { status: 400 });
     }
 
-    // Get the client
-    const client = await clerkClient();
+    // Get invitation details using Better Auth
+    const invitation = await auth.api.organizationGetInvitation({
+      body: {
+        invitationId: invitationId || token,
+      },
+      headers: await headers(),
+    });
 
-    try {
-      // For organization invitations (starting with 'orginv_'), we can try to get the invitation directly
-      if (invitationTicket.startsWith("orginv_")) {
-        console.log("Detected organization invitation format");
-
-        // Try to get the invitation directly
-        // Note: Clerk doesn't provide a direct method to get invitation by ID across all orgs,
-        // so we still need to iterate through organizations
-        const organizationsResponse =
-          await client.organizations.getOrganizationList({
-            limit: 100,
-          });
-
-        console.log(
-          `Found ${organizationsResponse.data.length} organizations to check`
-        );
-
-        for (const org of organizationsResponse.data) {
-          try {
-            // Get ALL invitations for this organization (not just pending)
-            const invitationsResponse =
-              await client.organizations.getOrganizationInvitationList({
-                organizationId: org.id,
-                limit: 100,
-              });
-
-            console.log(
-              `Checking ${invitationsResponse.data.length} invitations in org ${org.name} (${org.id})`
-            );
-
-            // Log all invitation IDs for debugging
-            invitationsResponse.data.forEach((inv) => {
-              console.log(
-                `  - Invitation ${inv.id} (status: ${inv.status}, email: ${inv.emailAddress})`
-              );
-            });
-
-            // Find the matching invitation by ID
-            const invitation = invitationsResponse.data.find(
-              (inv) => inv.id === invitationTicket
-            );
-
-            if (invitation) {
-              console.log("Found matching invitation:", {
-                id: invitation.id,
-                status: invitation.status,
-                email: invitation.emailAddress,
-                createdAt: invitation.createdAt,
-              });
-
-              // Check if invitation is still valid
-              if (invitation.status !== "pending") {
-                console.log(
-                  `Invitation status is ${invitation.status}, not pending`
-                );
-                return NextResponse.json(
-                  {
-                    error: `This invitation has already been ${invitation.status}`,
-                  },
-                  { status: 400 }
-                );
-              }
-
-              // Get full organization details
-              const organization = await client.organizations.getOrganization({
-                organizationId: org.id,
-              });
-
-              // Return invitation details
-              const response = {
-                id: invitation.id,
-                emailAddress: invitation.emailAddress,
-                organizationId: organization.id,
-                organizationName: organization.name,
-                role: invitation.role || "org:member",
-                status: invitation.status,
-                createdAt: invitation.createdAt,
-                publicMetadata: invitation.publicMetadata || {},
-              };
-
-              console.log("Returning invitation data:", response);
-              return NextResponse.json(response);
-            }
-          } catch (orgError) {
-            console.warn(`Error checking organization ${org.id}:`, orgError);
-            continue;
-          }
-        }
-      }
-
-      // If we get here, the invitation wasn't found
-      console.log("No matching invitation found for ticket:", invitationTicket);
-
-      // Let's also check if this might be a different type of invitation
-      // You might need to handle user invitations or other types differently
-
-      return NextResponse.json(
-        {
-          error:
-            "Invalid invitation code. The invitation may have expired or been revoked. Please contact your organization administrator for a new invitation.",
-        },
-        { status: 404 }
-      );
-    } catch (clerkError: unknown) {
-      console.error("Clerk API error:", clerkError);
-      console.error("Full error details:", JSON.stringify(clerkError, null, 2));
-
-      // Handle specific Clerk errors
-      if (
-        typeof clerkError === "object" &&
-        clerkError !== null &&
-        "errors" in clerkError &&
-        Array.isArray((clerkError as ClerkError).errors) &&
-        (clerkError as ClerkError).errors?.[0]
-      ) {
-        const error = (clerkError as ClerkError).errors![0];
-        return NextResponse.json(
-          { error: error.message || "Invalid invitation" },
-          { status: 400 }
-        );
-      }
-
-      return NextResponse.json(
-        { error: "Failed to validate invitation. Please try again." },
-        { status: 400 }
-      );
+    if (!invitation) {
+      return NextResponse.json({
+        error: "Invitation not found",
+        success: false,
+        valid: false,
+      }, { status: 404 });
     }
+
+    // Check if invitation is expired
+    const now = new Date();
+    const expiresAt = new Date(invitation.expiresAt);
+    
+    if (expiresAt < now) {
+      return NextResponse.json({
+        error: "Invitation has expired",
+        success: false,
+        valid: false,
+        expired: true,
+      }, { status: 400 });
+    }
+
+    // Check if invitation is already accepted
+    if (invitation.status === "accepted") {
+      return NextResponse.json({
+        error: "Invitation has already been accepted",
+        success: false,
+        valid: false,
+        alreadyAccepted: true,
+      }, { status: 400 });
+    }
+
+    // Check if invitation is cancelled
+    if (invitation.status === "canceled") {
+      return NextResponse.json({
+        error: "Invitation has been cancelled",
+        success: false,
+        valid: false,
+        cancelled: true,
+      }, { status: 400 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      valid: true,
+      invitation: {
+        id: invitation.id,
+        email: invitation.email,
+        role: invitation.role,
+        organizationName: invitation.organizationName,
+        invitedBy: invitation.invitedBy,
+        expiresAt: invitation.expiresAt,
+      },
+    });
   } catch (error) {
-    console.error("Error validating invitation:", error);
+    console.error("Error in validate-invitation:", error);
     return NextResponse.json(
-      { error: "An unexpected error occurred. Please try again." },
+      { error: "Internal server error", success: false, valid: false },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const invitationId = searchParams.get("id");
+    const token = searchParams.get("token");
+
+    if (!invitationId && !token) {
+      return NextResponse.json({
+        error: "Invitation ID or token is required",
+        success: false,
+      }, { status: 400 });
+    }
+
+    // Get invitation details using Better Auth
+    const invitation = await auth.api.organizationGetInvitation({
+      body: {
+        invitationId: invitationId || token,
+      },
+      headers: await headers(),
+    });
+
+    if (!invitation) {
+      return NextResponse.json({
+        error: "Invitation not found",
+        success: false,
+        valid: false,
+      }, { status: 404 });
+    }
+
+    // Check if invitation is expired
+    const now = new Date();
+    const expiresAt = new Date(invitation.expiresAt);
+    
+    if (expiresAt < now) {
+      return NextResponse.json({
+        error: "Invitation has expired",
+        success: false,
+        valid: false,
+        expired: true,
+      }, { status: 400 });
+    }
+
+    // Check if invitation is already accepted
+    if (invitation.status === "accepted") {
+      return NextResponse.json({
+        error: "Invitation has already been accepted",
+        success: false,
+        valid: false,
+        alreadyAccepted: true,
+      }, { status: 400 });
+    }
+
+    // Check if invitation is cancelled
+    if (invitation.status === "canceled") {
+      return NextResponse.json({
+        error: "Invitation has been cancelled",
+        success: false,
+        valid: false,
+        cancelled: true,
+      }, { status: 400 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      valid: true,
+      invitation: {
+        id: invitation.id,
+        email: invitation.email,
+        role: invitation.role,
+        organizationName: invitation.organizationName,
+        invitedBy: invitation.invitedBy,
+        expiresAt: invitation.expiresAt,
+      },
+    });
+  } catch (error) {
+    console.error("Error in validate-invitation GET:", error);
+    return NextResponse.json(
+      { error: "Internal server error", success: false, valid: false },
       { status: 500 }
     );
   }

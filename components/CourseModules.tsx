@@ -28,20 +28,21 @@ interface PortableTextBlock {
 }
 
 interface Lesson {
-  _id: string;
+  id: string;
   title?: string;
   duration?: number;
   videoUrl?: string;
   content?: PortableTextBlock[];
-  order?: number;
+  orderIndex?: number;
+  isFree?: boolean;
 }
 
 interface Module {
-  _id: string;
+  id: string;
   title?: string;
   description?: string;
   lessons?: Lesson[] | null;
-  order?: number;
+  orderIndex?: number;
 }
 
 interface CourseModulesProps {
@@ -75,7 +76,7 @@ export default function CourseModules({
   return (
     <div className="space-y-4">
       {modules.map((module, moduleIndex) => {
-        const isExpanded = expandedModules.includes(module._id);
+        const isExpanded = expandedModules.includes(module.id);
         const moduleLessons = module.lessons || [];
         const moduleDuration = moduleLessons.reduce(
           (acc, lesson) => acc + (lesson.duration || 0),
@@ -84,12 +85,12 @@ export default function CourseModules({
 
         return (
           <div
-            key={module._id}
+            key={module.id}
             className="border border-gray-200 rounded-2xl overflow-hidden hover:shadow-lg transition-all duration-300"
           >
             {/* Module Header */}
             <button
-              onClick={() => toggleModule(module._id)}
+              onClick={() => toggleModule(module.id)}
               className="w-full px-6 py-4 bg-gradient-to-r from-gray-50 to-white hover:from-gray-100 hover:to-gray-50 transition-all duration-200"
             >
               <div className="flex items-center justify-between">
@@ -146,10 +147,10 @@ export default function CourseModules({
             {isExpanded && moduleLessons.length > 0 && (
               <div className="border-t border-gray-100 bg-white">
                 {moduleLessons
-                  .sort((a, b) => (a.order || 0) - (b.order || 0))
+                  .sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0))
                   .map((lesson, lessonIndex) => (
                     <div
-                      key={lesson._id}
+                      key={lesson.id}
                       className="px-6 py-4 hover:bg-gray-50 transition-colors duration-200 border-b border-gray-100 last:border-b-0"
                     >
                       <div className="flex items-center justify-between">

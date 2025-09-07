@@ -1,111 +1,109 @@
-// app/api/organizations/create/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
-import { client } from "@/sanity/lib/adminClient";
-import groq from "groq";
+import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await auth();
+    const { name, adminEmail } = await request.json();
 
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const body = await request.json();
-    const { name, billingEmail, clerkOrgId, adminUserId } = body;
-
-    if (!name || !billingEmail || !clerkOrgId || !adminUserId) {
-      return NextResponse.json(
-        { error: "Missing required fields" },
-        { status: 400 }
-      );
-    }
-
-    // Check if organization already exists
-    const existingOrg = await client.fetch(
-      groq`*[_type == "organization" && clerkOrganizationId == $clerkOrgId][0]`,
-      { clerkOrgId }
-    );
-
-    if (existingOrg) {
-      console.log("Organization already exists, returning existing data");
+    // Validation
+    if (!name || !adminEmail) {
       return NextResponse.json({
-        success: true,
-        organization: {
-          id: existingOrg._id,
-          name: existingOrg.name,
-          billingEmail: existingOrg.billingEmail,
-        },
-      });
+        error: "Organization name and admin email are required",
+        success: false,
+      }, { status: 400 });
     }
 
-    // Create organization in Sanity
-    const organization = await client.create({
-      _type: "organization",
-      name,
-      billingEmail,
-      clerkOrganizationId: clerkOrgId,
-      createdAt: new Date().toISOString(),
-      // No subscription fields needed - just track purchased courses
-      purchasedCourses: [],
+    // Get session to verify the user is authenticated
+    const session = await auth.api.getSession({
+      headers: await headers(),
     });
 
-    console.log("Created organization:", organization._id);
+    if (!session?.user) {
+      return NextResponse.json({
+        error: "Authentication required",
+        success: false,
+      }, { status: 401 });
+    }
 
-    // Update the admin user to add organization reference and admin role
-    const studentResult = await client.fetch(
-      groq`*[_type == "student" && clerkId == $userId][0]`,
-      { userId: adminUserId }
-    );
+    // Check if the authenticated user's email matches the admin email
+    if (session.user.email !== adminEmail) {
+      return NextResponse.json({
+        error: "Admin email must match the authenticated user's email",
+        success: false,
+      }, { status: 400 });
+    }
 
-    if (studentResult) {
-      await client
-        .patch(studentResult._id)
-        .set({
-          organization: {
-            _type: "reference",
-            _ref: organization._id,
-          },
-          role: "admin",
-        })
-        .commit();
-
-      console.log("Updated admin user with organization reference");
-    } else {
-      // Create student record if it doesn't exist
-      const newStudent = await client.create({
-        _type: "student",
-        clerkId: adminUserId,
-        email: billingEmail,
-        firstName: name.split(" ")[0] || "Admin",
-        lastName: name.split(" ").slice(1).join(" ") || "",
-        organization: {
-          _type: "reference",
-          _ref: organization._id,
+    // Create organization using Better Auth's organization plugin
+    const result = await auth.api.organizationCreateOrganization({
+      body: {
+        name: name.trim(),
+        slug: name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
+        metadata: {
+          createdAt: new Date().toISOString(),
+          createdBy: session.user.id,
         },
-        role: "admin",
-        createdAt: new Date().toISOString(),
-      });
+      },
+      headers: await headers(),
+    });
 
-      console.log("Created new student record for admin:", newStudent._id);
+    if (!result) {
+      return NextResponse.json({
+        error: "Failed to create organization",
+        success: false,
+      }, { status: 500 });
     }
 
     return NextResponse.json({
       success: true,
-      organization: {
-        id: organization._id,
-        name: organization.name,
-        billingEmail: organization.billingEmail,
-      },
+      organization: result,
+      message: "Organization created successfully",
     });
   } catch (error) {
-    console.error("Error creating organization:", error);
+    console.error("Error in organizations/create:", error);
+    
+    // Handle specific Better Auth errors
+    if (error instanceof Error && error.message.includes("already exists")) {
+      return NextResponse.json({
+        error: "An organization with this name already exists",
+        success: false,
+      }, { status: 409 });
+    }
+    
     return NextResponse.json(
-      {
-        error: "Failed to create organization",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
+      { error: "Internal server error", success: false },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    // Get session to verify the user is authenticated
+    const session = await auth.api.getSession({
+      headers: await headers(),
+    });
+
+    if (!session?.user) {
+      return NextResponse.json({
+        error: "Authentication required",
+        success: false,
+      }, { status: 401 });
+    }
+
+    // List organizations the user is a member of
+    const organizations = await auth.api.organizationListOrganizations({
+      headers: await headers(),
+    });
+
+    return NextResponse.json({
+      success: true,
+      organizations: organizations || [],
+    });
+  } catch (error) {
+    console.error("Error in organizations list:", error);
+    return NextResponse.json(
+      { error: "Internal server error", success: false },
       { status: 500 }
     );
   }
