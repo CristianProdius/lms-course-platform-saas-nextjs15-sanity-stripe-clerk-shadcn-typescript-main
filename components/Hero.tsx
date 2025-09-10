@@ -110,7 +110,7 @@ export default function Hero() {
                   "Sending..."
                 ) : (
                   <>
-                    Get Free AI Training
+                    Opt in & Get Started
                     <ArrowRight className="inline-block w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform duration-300" />
                   </>
                 )}
