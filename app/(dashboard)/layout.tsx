@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import { AuthProvider, useAuth } from "@/components/providers/auth-provider";
 import Header from "@/components/Header";
 import Sidebar from "@/components/dashboard/Sidebar";
-import { Menu, X } from "lucide-react";
+import { Menu, X, Home, GraduationCap, BookOpen, Users } from "lucide-react";
+import Link from "next/link";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -189,11 +190,12 @@ function DashboardLayoutContent({ children }: DashboardLayoutProps) {
         <button
           onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
           className={`
-            hidden lg:flex items-center justify-center w-10 h-10 mt-4 ml-2 rounded-lg
+            hidden lg:flex items-center justify-center w-10 h-10 rounded-lg
             bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700
             hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-300
-            absolute z-20
-            ${isLessonPage ? 'animate-pulse' : ''}
+            fixed top-20 z-30
+            ${isSidebarCollapsed ? 'left-20' : 'left-[17rem]'}
+            ${isLessonPage && mounted && isSidebarCollapsed ? 'animate-pulse' : ''}
           `}
           aria-label="Toggle sidebar"
           title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -226,22 +228,38 @@ function DashboardLayoutContent({ children }: DashboardLayoutProps) {
             fixed lg:relative
             z-40 lg:z-10
             transition-all duration-300 ease-in-out
-            ${isSidebarCollapsed ? 'lg:w-0 lg:overflow-hidden' : 'lg:w-64'}
+            ${isSidebarCollapsed ? 'lg:w-16' : 'lg:w-64'}
             w-64
             bg-white dark:bg-gray-800
             border-r border-gray-200 dark:border-gray-700
             h-full
-            overflow-y-auto
+            ${isSidebarCollapsed ? 'lg:overflow-hidden' : 'overflow-y-auto'}
           `}
         >
-          <Sidebar />
+          <div className={isSidebarCollapsed ? 'lg:hidden' : ''}>
+            <Sidebar />
+          </div>
+          {/* Minimized sidebar icons */}
+          {isSidebarCollapsed && (
+            <div className="hidden lg:block p-2 space-y-2">
+              <Link href="/dashboard" className="block p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Dashboard">
+                <Home className="h-5 w-5 mx-auto text-gray-600 dark:text-gray-400" />
+              </Link>
+              <Link href="/dashboard/courses" className="block p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="My Courses">
+                <GraduationCap className="h-5 w-5 mx-auto text-gray-600 dark:text-gray-400" />
+              </Link>
+              <Link href="/courses" className="block p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Browse Courses">
+                <BookOpen className="h-5 w-5 mx-auto text-gray-600 dark:text-gray-400" />
+              </Link>
+              <Link href="/dashboard/members" className="block p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Team Members">
+                <Users className="h-5 w-5 mx-auto text-gray-600 dark:text-gray-400" />
+              </Link>
+            </div>
+          )}
         </div>
 
         {/* Main Content */}
-        <div className={`
-          flex-1 overflow-y-auto transition-all duration-300
-          ${!isSidebarCollapsed ? 'lg:ml-0' : 'lg:ml-12'}
-        `}>
+        <div className="flex-1 overflow-y-auto transition-all duration-300">
           <main className="p-6">
             {/* Lesson Mode Notification */}
             {isLessonPage && isSidebarCollapsed && mounted && (
