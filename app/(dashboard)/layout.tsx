@@ -5,29 +5,42 @@ import { useEffect, useState } from "react";
 import { AuthProvider, useAuth } from "@/components/providers/auth-provider";
 import Header from "@/components/Header";
 import Sidebar from "@/components/dashboard/Sidebar";
+import { Menu, X } from "lucide-react";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
 function DashboardLayoutContent({ children }: DashboardLayoutProps) {
-  const { 
-    isAuthenticated, 
+  const {
+    isAuthenticated,
     organization,
-    organizations, 
+    organizations,
     user,
-    loading, 
-    isAdmin, 
+    loading,
+    isAdmin,
     isEmployee
   } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  // Auto-minimize sidebar when viewing lessons
+  const isLessonPage = pathname.includes('/lessons/');
 
   // Handle client-side mounting
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Auto-collapse sidebar on lesson pages
+  useEffect(() => {
+    if (isLessonPage) {
+      setIsSidebarCollapsed(true);
+    }
+  }, [isLessonPage]);
 
   // Redirect unauthenticated users
   useEffect(() => {
@@ -170,16 +183,88 @@ function DashboardLayoutContent({ children }: DashboardLayoutProps) {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Header />
-      
+
       <div className="flex h-[calc(100vh-73px)]"> {/* Subtract header height */}
+        {/* Sidebar Toggle Button for Desktop */}
+        <button
+          onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+          className={`
+            hidden lg:flex items-center justify-center w-10 h-10 mt-4 ml-2 rounded-lg
+            bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700
+            hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-300
+            absolute z-20
+            ${isLessonPage ? 'animate-pulse' : ''}
+          `}
+          aria-label="Toggle sidebar"
+          title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          <Menu className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+        </button>
+
+        {/* Mobile Sidebar Toggle */}
+        <button
+          onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+          className="lg:hidden fixed bottom-4 right-4 z-50 flex items-center justify-center w-12 h-12 rounded-full bg-gradient-to-r from-[#FF4A1C] to-[#2A4666] text-white shadow-lg hover:shadow-xl transition-shadow"
+          aria-label="Toggle mobile sidebar"
+        >
+          {isMobileSidebarOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+        </button>
+
+        {/* Mobile Sidebar Overlay */}
+        {isMobileSidebarOpen && (
+          <div
+            className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-40"
+            onClick={() => setIsMobileSidebarOpen(false)}
+          />
+        )}
+
         {/* Sidebar */}
-        <div className="hidden lg:block w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 overflow-y-auto">
+        <div
+          className={`
+            ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+            lg:translate-x-0
+            fixed lg:relative
+            z-40 lg:z-10
+            transition-all duration-300 ease-in-out
+            ${isSidebarCollapsed ? 'lg:w-0 lg:overflow-hidden' : 'lg:w-64'}
+            w-64
+            bg-white dark:bg-gray-800
+            border-r border-gray-200 dark:border-gray-700
+            h-full
+            overflow-y-auto
+          `}
+        >
           <Sidebar />
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className={`
+          flex-1 overflow-y-auto transition-all duration-300
+          ${!isSidebarCollapsed ? 'lg:ml-0' : 'lg:ml-12'}
+        `}>
           <main className="p-6">
+            {/* Lesson Mode Notification */}
+            {isLessonPage && isSidebarCollapsed && mounted && (
+              <div className="hidden lg:block mb-4">
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <svg className="h-4 w-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="text-sm text-blue-700 dark:text-blue-300">
+                      Focus mode enabled - Navigation minimized for better learning experience
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setIsSidebarCollapsed(false)}
+                    className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    Show navigation
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Context Bar - Organization or Platform Admin */}
             {organization ? (
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 mb-6">
