@@ -34,17 +34,32 @@ function SignUpContent() {
 
     try {
       console.log("Employee signup with invitation code:", inviteCode);
-      
-      const result = await signUp.email({
+
+      const signupResult = await signUp.email({
         email,
         password,
         name: name || email.split('@')[0],
       });
-      
-      console.log("Signup result:", result);
+
+      console.log("Signup result:", signupResult);
+
+      // After signup, sign in the user to establish a session
+      const signInResult = await signIn.email({
+        email,
+        password,
+      });
+
+      console.log("Sign in result:", signInResult);
+
+      if (signInResult.error) {
+        toast.error("Account created but failed to sign in. Please sign in manually.");
+        router.push(`/sign-in?inviteCode=${inviteCode}`);
+        return;
+      }
+
       toast.success("Account created successfully!");
-      
-      // After signup, redirect to the invitation acceptance page
+
+      // After signup and sign-in, redirect to the invitation acceptance page
       if (inviteCode) {
         router.push(`/employee-join/${inviteCode}`);
       } else {
@@ -52,15 +67,15 @@ function SignUpContent() {
       }
     } catch (error: any) {
       console.error("Employee signup error:", error);
-      
+
       let errorMessage = "Failed to create account. Please try again.";
-      
+
       if (error?.error?.message) {
         errorMessage = error.error.message;
       } else if (error?.message) {
         errorMessage = error.message;
       }
-      
+
       toast.error(errorMessage);
     } finally {
       setLoading(false);
@@ -73,27 +88,42 @@ function SignUpContent() {
 
     try {
       console.log("Attempting to sign up with:", { email, name: name || email.split('@')[0] });
-      
-      const result = await signUp.email({
+
+      const signupResult = await signUp.email({
         email,
         password,
         name: name || email.split('@')[0],
       });
-      
-      console.log("Signup result:", result);
+
+      console.log("Signup result:", signupResult);
+
+      // After signup, sign in the user to establish a session
+      const signInResult = await signIn.email({
+        email,
+        password,
+      });
+
+      console.log("Sign in result:", signInResult);
+
+      if (signInResult.error) {
+        toast.error("Account created but failed to sign in. Please sign in manually.");
+        router.push("/sign-in");
+        return;
+      }
+
       toast.success("Platform admin account created successfully!");
       router.push("/dashboard/platform-admin");
     } catch (error: any) {
       console.error("Platform admin signup error:", error);
-      
+
       let errorMessage = "Failed to create platform admin account. Please try again.";
-      
+
       if (error?.error?.message) {
         errorMessage = error.error.message;
       } else if (error?.message) {
         errorMessage = error.message;
       }
-      
+
       toast.error(errorMessage);
     } finally {
       setLoading(false);
